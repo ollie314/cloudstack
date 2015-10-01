@@ -19,22 +19,24 @@
 
 package org.apache.cloudstack.storage.datastore.driver;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import javax.inject.Inject;
 
 import org.apache.log4j.Logger;
-
 import org.apache.cloudstack.engine.subsystem.api.storage.ChapInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.CopyCommandResult;
 import org.apache.cloudstack.engine.subsystem.api.storage.CreateCmdResult;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataObject;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
+import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreCapabilities;
 import org.apache.cloudstack.engine.subsystem.api.storage.PrimaryDataStoreDriver;
 import org.apache.cloudstack.engine.subsystem.api.storage.SnapshotInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
 import org.apache.cloudstack.framework.async.AsyncCompletionCallback;
 import org.apache.cloudstack.storage.command.CommandResult;
+import org.apache.cloudstack.storage.command.CreateObjectAnswer;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.datastore.util.ElastistorUtil;
@@ -46,7 +48,6 @@ import com.cloud.agent.api.Answer;
 import com.cloud.agent.api.to.DataObjectType;
 import com.cloud.agent.api.to.DataStoreTO;
 import com.cloud.agent.api.to.DataTO;
-import com.cloud.host.Host;
 import com.cloud.storage.DiskOfferingVO;
 import com.cloud.storage.ResizeVolumePayload;
 import com.cloud.storage.Storage.StoragePoolType;
@@ -176,7 +177,7 @@ public class ElastistorPrimaryDataStoreDriver extends CloudStackPrimaryDataStore
             _volumeDao.update(volume.getId(), volume);
 
             // create new volume details for the volume
-            updateVolumeDetails(volume, esvolume);
+            //updateVolumeDetails(volume, esvolume);
 
             long capacityBytes = storagePool.getCapacityBytes();
             long usedBytes = storagePool.getUsedBytes();
@@ -234,8 +235,8 @@ public class ElastistorPrimaryDataStoreDriver extends CloudStackPrimaryDataStore
                 long usedBytes = storagePool.getUsedBytes();
                 long capacityIops = storagePool.getCapacityIops();
 
-                usedBytes -= volumeInfo != null ? volumeInfo.getSize() : 0;
-                capacityIops += volumeInfo != null ? volumeInfo.getMaxIops() : 0;
+                usedBytes -= volumeInfo.getSize();
+                capacityIops += volumeInfo.getMaxIops();
 
                 storagePool.setUsedBytes(usedBytes < 0 ? 0 : usedBytes);
                 storagePool.setCapacityIops(capacityIops < 0 ? 0 : capacityIops);
@@ -373,9 +374,14 @@ public class ElastistorPrimaryDataStoreDriver extends CloudStackPrimaryDataStore
                 throw new CloudRuntimeException("elastistor volume snapshot failed");
             }else{
                 s_logger.info("elastistor volume snapshot succesfull");
-                result = new CreateCmdResult(null, null);
-                result.setSuccess(answer.getResult());
-                result.setAnswer(answer);
+
+                snapshotTO.setPath(answer.getDetails());
+
+                CreateObjectAnswer createObjectAnswer = new CreateObjectAnswer(snapshotTO);
+
+                result = new CreateCmdResult(null, createObjectAnswer);
+
+                result.setResult(null);
             }
         }
          catch (Throwable e) {
@@ -387,26 +393,17 @@ public class ElastistorPrimaryDataStoreDriver extends CloudStackPrimaryDataStore
     }
 
     @Override
-    public void revertSnapshot(SnapshotInfo snapshot, AsyncCompletionCallback<CommandResult> callback) {
+    public void revertSnapshot(SnapshotInfo snapshot, SnapshotInfo snapshotOnPrimaryStore, AsyncCompletionCallback<CommandResult> callback) {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public Map<String, String> getCapabilities() {
-        // TODO Auto-generated method stub
-        return null;
-    }
+        Map<String, String> mapCapabilities = new HashMap<String, String>();
 
-    @Override
-    public boolean grantAccess(DataObject dataObject, Host host, DataStore dataStore) {
-        // TODO Auto-generated method stub
-        return false;
-    }
+        mapCapabilities.put(DataStoreCapabilities.STORAGE_SYSTEM_SNAPSHOT.toString(), Boolean.TRUE.toString());
 
-    @Override
-    public void revokeAccess(DataObject dataObject, Host host, DataStore dataStore) {
-        // TODO Auto-generated method stub
-
+        return mapCapabilities;
     }
 
 }

@@ -53,6 +53,7 @@ import com.cloud.projects.Project;
 import com.cloud.template.VirtualMachineTemplate;
 import com.cloud.user.Account;
 import com.cloud.user.AccountService;
+import com.cloud.user.UserVO;
 import com.cloud.user.dao.UserDao;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.vm.NicProfile;
@@ -109,9 +110,18 @@ public class ServiceManagerImpl implements ServiceManager {
         networks.put((NetworkVO)left, new ArrayList<NicProfile>());
         networks.put((NetworkVO)right, new ArrayList<NicProfile>());
         String instanceName = VirtualMachineName.getVmName(id, owner.getId(), "SRV");
+
+        long userId = CallContext.current().getCallingUserId();
+        if (CallContext.current().getCallingAccount().getId() != owner.getId()) {
+            List<UserVO> userVOs = _userDao.listByAccount(owner.getAccountId());
+            if (!userVOs.isEmpty()) {
+                userId =  userVOs.get(0).getId();
+            }
+        }
+
         ServiceVirtualMachine svm =
             new ServiceVirtualMachine(id, instanceName, name, template.getId(), serviceOffering.getId(), template.getHypervisorType(), template.getGuestOSId(),
-                zone.getId(), owner.getDomainId(), owner.getAccountId(), false);
+                zone.getId(), owner.getDomainId(), owner.getAccountId(), userId, false);
 
         // database synchronization code must be able to distinguish service instance VMs.
         Map<String, String> kvmap = new HashMap<String, String>();

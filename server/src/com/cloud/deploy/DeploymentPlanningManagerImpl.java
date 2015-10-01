@@ -31,8 +31,9 @@ import javax.ejb.Local;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
-import org.apache.log4j.Logger;
+import com.cloud.utils.fsm.StateMachine2;
 
+import org.apache.log4j.Logger;
 import org.apache.cloudstack.affinity.AffinityGroupProcessor;
 import org.apache.cloudstack.affinity.AffinityGroupService;
 import org.apache.cloudstack.affinity.AffinityGroupVMMapVO;
@@ -64,6 +65,7 @@ import com.cloud.agent.manager.allocator.HostAllocator;
 import com.cloud.capacity.CapacityManager;
 import com.cloud.capacity.dao.CapacityDao;
 import com.cloud.configuration.Config;
+import com.cloud.configuration.ConfigurationManagerImpl;
 import com.cloud.dc.ClusterDetailsDao;
 import com.cloud.dc.ClusterDetailsVO;
 import com.cloud.dc.ClusterVO;
@@ -120,7 +122,6 @@ import com.cloud.utils.db.TransactionCallback;
 import com.cloud.utils.db.TransactionStatus;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.fsm.StateListener;
-import com.cloud.utils.fsm.StateMachine2;
 import com.cloud.vm.DiskProfile;
 import com.cloud.vm.VMInstanceVO;
 import com.cloud.vm.VirtualMachine;
@@ -199,8 +200,6 @@ StateListener<State, VirtualMachine.Event, VirtualMachine> {
     @Inject
     protected StoragePoolHostDao _poolHostDao;
 
-    @Inject
-    protected DataCenterDao _zoneDao;
     @Inject
     protected VolumeDao _volsDao;
     @Inject
@@ -359,7 +358,7 @@ StateListener<State, VirtualMachine.Event, VirtualMachine> {
                     }
                 }
             }
-            s_logger.debug("Cannnot deploy to specified host, returning.");
+            s_logger.debug("Cannot deploy to specified host, returning.");
             return null;
         }
 
@@ -401,10 +400,21 @@ StateListener<State, VirtualMachine.Event, VirtualMachine> {
                                 "memoryOvercommitRatio");
                         Float cpuOvercommitRatio = Float.parseFloat(cluster_detail_cpu.getValue());
                         Float memoryOvercommitRatio = Float.parseFloat(cluster_detail_ram.getValue());
-                        if (_capacityMgr.checkIfHostHasCapacity(host.getId(), cpu_requested, ram_requested, true,
-                                cpuOvercommitRatio, memoryOvercommitRatio, true)
-                                && _capacityMgr.checkIfHostHasCpuCapability(host.getId(), offering.getCpu(),
-                                        offering.getSpeed())) {
+
+                        boolean hostHasCpuCapability, hostHasCapacity = false;
+                        hostHasCpuCapability = _capacityMgr.checkIfHostHasCpuCapability(host.getId(), offering.getCpu(), offering.getSpeed());
+
+                        if (hostHasCpuCapability) {
+                            // first check from reserved capacity
+                            hostHasCapacity = _capacityMgr.checkIfHostHasCapacity(host.getId(), cpu_requested, ram_requested, true, cpuOvercommitRatio, memoryOvercommitRatio, true);
+
+                            // if not reserved, check the free capacity
+                            if (!hostHasCapacity)
+                                hostHasCapacity = _capacityMgr.checkIfHostHasCapacity(host.getId(), cpu_requested, ram_requested, false, cpuOvercommitRatio, memoryOvercommitRatio, true);
+                        }
+
+                        if (hostHasCapacity
+                                && hostHasCpuCapability) {
                             s_logger.debug("The last host of this VM is UP and has enough capacity");
                             s_logger.debug("Now checking for suitable pools under zone: " + host.getDataCenterId()
                                     + ", pod: " + host.getPodId() + ", cluster: " + host.getClusterId());
@@ -1215,7 +1225,7 @@ StateListener<State, VirtualMachine.Event, VirtualMachine> {
             // volume is ready and the pool should be reused.
             // In this case, also check if rest of the volumes are ready and can
             // be reused.
-            if (plan.getPoolId() != null) {
+            if (plan.getPoolId() != null || (toBeCreated.getVolumeType() == Volume.Type.DATADISK && toBeCreated.getPoolId() != null && toBeCreated.getState() == Volume.State.Ready)) {
                 s_logger.debug("Volume has pool already allocated, checking if pool can be reused, poolId: " + toBeCreated.getPoolId());
                 List<StoragePool> suitablePools = new ArrayList<StoragePool>();
                 StoragePool pool = null;
@@ -1290,20 +1300,12 @@ StateListener<State, VirtualMachine.Event, VirtualMachine> {
             DiskProfile diskProfile = new DiskProfile(toBeCreated, diskOffering, vmProfile.getHypervisorType());
             boolean useLocalStorage = false;
             if (vmProfile.getType() != VirtualMachine.Type.User) {
-                String ssvmUseLocalStorage = _configDao.getValue(Config.SystemVMUseLocalStorage.key());
-
-                DataCenterVO zone = _zoneDao.findById(plan.getDataCenterId());
-
-                // It should not happen to have a "null" zone here. There can be NO instance if there is NO zone,
-                // so this part of the code would never be reached if no zone has been created.
-                //
-                // Added the check and the comment just to make it clear.
-                boolean zoneUsesLocalStorage = zone != null ? zone.isLocalStorageEnabled() : false;
-
-                // Local storage is used for the NON User VMs if, and only if, the Zone is marked to use local storage AND
-                // the global settings (ssvmUseLocalStorage) is set to true. Otherwise, the global settings won't be applied.
-                if (ssvmUseLocalStorage.equalsIgnoreCase("true") && zoneUsesLocalStorage) {
-                    useLocalStorage = true;
+                DataCenterVO zone = _dcDao.findById(plan.getDataCenterId());
+                assert (zone != null) : "Invalid zone in deployment plan";
+                Boolean useLocalStorageForSystemVM = ConfigurationManagerImpl.SystemVMUseLocalStorage.valueIn(zone.getId());
+                if (useLocalStorageForSystemVM != null) {
+                    useLocalStorage = useLocalStorageForSystemVM.booleanValue();
+                    s_logger.debug("System VMs will use " + (useLocalStorage ? "local" : "shared") + " storage for zone id=" + plan.getDataCenterId());
                 }
             } else {
                 useLocalStorage = diskOffering.getUseLocalStorage();

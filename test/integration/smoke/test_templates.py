@@ -34,8 +34,53 @@ from nose.plugins.attrib import attr
 import urllib
 #Import System modules
 import time
+from marvin.cloudstackAPI import (createTemplate, listOsTypes)
 
 _multiprocess_shared_ = True
+
+# Function to create template with name existing in test_data without any extensions
+
+
+def create(apiclient, services, volumeid=None, account=None, domainid=None, projectid=None):
+    cmd = createTemplate.createTemplateCmd()
+    cmd.displaytext = services["displaytext"]
+    cmd.name = services["name"]
+    if "ostypeid" in services:
+        cmd.ostypeid = services["ostypeid"]
+    elif "ostype" in services:
+        sub_cmd = listOsTypes.listOsTypesCmd()
+        sub_cmd.description = services["ostype"]
+        ostypes = apiclient.listOsTypes(sub_cmd)
+
+        if not isinstance(ostypes, list):
+            raise Exception(
+                "Unable to find Ostype id with desc: %s" % services["ostype"]
+            )
+        cmd.ostypeid = ostypes[0].id
+    else:
+        raise Exception(
+            "Unable to find Ostype is required for creating template")
+
+    cmd.isfeatured = services[
+        "isfeatured"] if "isfeatured" in services else False
+
+    cmd.ispublic = services[
+        "ispublic"] if "ispublic" in services else False
+    cmd.isextractable = services[
+        "isextractable"] if "isextractable" in services else False
+    cmd.passwordenabled = services[
+        "passwordenabled"] if "passwordenabled" in services else False
+
+    if volumeid:
+        cmd.volumeid = volumeid
+    if account:
+        cmd.account = account
+    if domainid:
+        cmd.domainid = domainid
+    if projectid:
+        cmd.projectid = projectid
+    return apiclient.createTemplate(cmd)
+
 
 class TestCreateTemplate(cloudstackTestCase):
 
@@ -44,6 +89,10 @@ class TestCreateTemplate(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedHypervisor:
+            self.skipTest("Skipping test because unsupported hypervisor\
+                    %s" % self.hypervisor)
         return
 
     def tearDown(self):
@@ -59,17 +108,19 @@ class TestCreateTemplate(cloudstackTestCase):
     def setUpClass(cls):
         testClient = super(TestCreateTemplate, cls).getClsTestClient()
         cls.apiclient = testClient.getApiClient()
+        cls._cleanup = []
         cls.services = testClient.getParsedTestDataConfig()
+        cls.unsupportedHypervisor = False
         cls.hypervisor = testClient.getHypervisorInfo()
         if cls.hypervisor.lower() in ['lxc']:
-            raise unittest.SkipTest("Template creation from root volume is not supported in LXC")
+            # Template creation from root volume is not supported in LXC
+            cls.unsupportedHypervisor = True
+            return
 
         # Get Zone, Domain and templates
         cls.domain = get_domain(cls.apiclient)
         cls.zone = get_zone(cls.apiclient, testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
-
-        cls._cleanup = []
         try:
             cls.disk_offering = DiskOffering.create(
                                     cls.apiclient,
@@ -100,7 +151,7 @@ class TestCreateTemplate(cloudstackTestCase):
             cls._cleanup.append(cls.account)
             cls.service_offering = ServiceOffering.create(
                                             cls.apiclient,
-                                            cls.services["service_offerings"]
+                                            cls.services["service_offerings"]["tiny"]
                                             )
             cls._cleanup.append(cls.service_offering)
             #create virtual machine
@@ -140,6 +191,46 @@ class TestCreateTemplate(cloudstackTestCase):
             raise Exception("Warning: Exception during cleanup : %s" % e)
 
         return
+
+    @attr(tags = ["advanced", "advancedns", "smoke"], required_hardware="false")
+    def test_CreateTemplateWithDuplicateName(self):
+        """Test when createTemplate is used to create templates having the same name all of them get
+        different unique names so that the templates with same name does not get deleted during template sync"""
+
+        #1. Create 2 templates with same name
+        #2. check the db that the templates with same name have different unique_name
+
+        #Create templates from Virtual machine and Volume ID
+        template1 = create(self.apiclient,
+                           self.services["template"],
+                           self.volume.id,
+                           account=self.account.name)
+        template2 = create(self.apiclient,
+                           self.services["template"],
+                           self.volume.id,
+                           account=self.account.name)
+
+        self.debug("Created template with ID: %s" % template1.id)
+        self.debug("Created template with ID: %s" % template2.id)
+
+        self.assertEqual(
+            template1.name, template2.name, "Created templates with same name")
+
+        self.debug("select unique_name from vm_template where name='%s';"
+                   % template1.name)
+
+        #Db query to check for unique_name for the templates with same name
+
+        qresultset = self.dbclient.execute("select unique_name from vm_template where name='%s' and removed is NULL ;"
+                                          % template1.name)
+
+
+        self.debug("unique_name of template1 is '%s' and unique_name of template2 is '%s'", qresultset[0],
+                    qresultset[1])
+
+        self.assertNotEqual(qresultset[0], qresultset[1],
+                            "unique names are different")
+
 
     @attr(tags = ["advanced", "advancedns", "smoke"], required_hardware="false")
     def test_01_create_template(self):
@@ -210,10 +301,14 @@ class TestTemplates(cloudstackTestCase):
 
         testClient = super(TestTemplates, cls).getClsTestClient()
         cls.apiclient = testClient.getApiClient()
+        cls._cleanup = []
         cls.services = testClient.getParsedTestDataConfig()
+        cls.unsupportedHypervisor = False
         cls.hypervisor = testClient.getHypervisorInfo()
         if cls.hypervisor.lower() in ['lxc']:
-            raise unittest.SkipTest("Template creation from root volume is not supported in LXC")
+            # Template creation from root volume is not supported in LXC
+            cls.unsupportedHypervisor = True
+            return
 
         # Get Zone, Domain and templates
         cls.domain = get_domain(cls.apiclient)
@@ -258,7 +353,7 @@ class TestTemplates(cloudstackTestCase):
                             )
         cls.service_offering = ServiceOffering.create(
                                             cls.apiclient,
-                                            cls.services["service_offerings"]
+                                            cls.services["service_offerings"]["tiny"]
                                         )
         #create virtual machine
         cls.virtual_machine = VirtualMachine.create(
@@ -325,6 +420,10 @@ class TestTemplates(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedHypervisor:
+            self.skipTest("Skipping test because unsupported hypervisor\
+                    %s" % self.hypervisor)
         return
 
     def tearDown(self):

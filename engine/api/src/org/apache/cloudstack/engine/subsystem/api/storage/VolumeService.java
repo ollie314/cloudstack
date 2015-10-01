@@ -20,6 +20,7 @@ package org.apache.cloudstack.engine.subsystem.api.storage;
 
 import java.util.Map;
 
+import com.cloud.utils.Pair;
 import org.apache.cloudstack.engine.cloud.entity.api.VolumeEntity;
 import org.apache.cloudstack.framework.async.AsyncCallFuture;
 import org.apache.cloudstack.storage.command.CommandResult;
@@ -27,6 +28,8 @@ import org.apache.cloudstack.storage.command.CommandResult;
 import com.cloud.agent.api.to.VirtualMachineTO;
 import com.cloud.exception.ConcurrentOperationException;
 import com.cloud.host.Host;
+import com.cloud.hypervisor.Hypervisor.HypervisorType;
+import com.cloud.offering.DiskOffering;
 
 public interface VolumeService {
     class VolumeApiResult extends CommandResult {
@@ -94,6 +97,8 @@ public interface VolumeService {
 
     AsyncCallFuture<VolumeApiResult> registerVolume(VolumeInfo volume, DataStore store);
 
+    public Pair<EndPoint,DataObject> registerVolumeForPostUpload(VolumeInfo volume, DataStore store);
+
     AsyncCallFuture<VolumeApiResult> resize(VolumeInfo volume);
 
     void resizeVolumeOnHypervisor(long volumeId, long newSize, long destHostId, String instanceName);
@@ -102,4 +107,5 @@ public interface VolumeService {
 
     SnapshotInfo takeSnapshot(VolumeInfo volume);
 
+    VolumeInfo updateHypervisorSnapshotReserveForVolume(DiskOffering diskOffering, long volumeId, HypervisorType hyperType);
 }

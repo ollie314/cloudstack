@@ -405,7 +405,7 @@ public enum Config {
     MaxNumberOfSecondaryIPsPerNIC(
             "Network", ManagementServer.class, Integer.class,
             "vm.network.nic.max.secondary.ipaddresses", "256",
-            "Specify the number of secondary ip addresses per nic per vm", null),
+            "Specify the number of secondary ip addresses per nic per vm. Default value 10 is used, if not specified.", null),
 
     EnableServiceMonitoring(
             "Network", ManagementServer.class, Boolean.class,
@@ -685,15 +685,6 @@ public enum Config {
             "/var/cloudstack/mnt",
             "The mount point on the Management Server for Secondary Storage.",
             null),
-//    UpgradeURL("Advanced", ManagementServer.class, String.class, "upgrade.url", "http://example.com:8080/client/agent/update.zip", "The upgrade URL is the URL of the management server that agents will connect to in order to automatically upgrade.", null),
-    SystemVMUseLocalStorage(
-            "Advanced",
-            ManagementServer.class,
-            Boolean.class,
-            "system.vm.use.local.storage",
-            "false",
-            "Indicates whether to use local storage pools or shared storage pools for system VMs.",
-            null, ConfigKey.Scope.Zone.toString()),
     SystemVMAutoReserveCapacity(
             "Advanced",
             ManagementServer.class,
@@ -724,7 +715,7 @@ public enum Config {
             String.class,
             "hypervisor.list",
             HypervisorType.Hyperv + "," + HypervisorType.KVM + "," + HypervisorType.XenServer + "," + HypervisorType.VMware + "," + HypervisorType.BareMetal + "," +
-                HypervisorType.Ovm + "," + HypervisorType.LXC,
+                HypervisorType.Ovm + "," + HypervisorType.LXC + "," + HypervisorType.Ovm3,
             "The list of hypervisors that this deployment will use.",
             "hypervisorList"),
     ManagementNetwork("Advanced", ManagementServer.class, String.class, "management.network.cidr", null, "The cidr of management server network", null),
@@ -1077,6 +1068,29 @@ public enum Config {
     OvmPrivateNetwork("Hidden", ManagementServer.class, String.class, "ovm.private.network.device", null, "Specify the private bridge on host for private network", null),
     OvmGuestNetwork("Hidden", ManagementServer.class, String.class, "ovm.guest.network.device", null, "Specify the private bridge on host for private network", null),
 
+    // Ovm3
+    Ovm3PublicNetwork("Hidden", ManagementServer.class, String.class, "ovm3.public.network.device", null, "Specify the public bridge on host for public network", null),
+    Ovm3PrivateNetwork("Hidden", ManagementServer.class, String.class, "ovm3.private.network.device", null, "Specify the private bridge on host for private network", null),
+    Ovm3GuestNetwork("Hidden", ManagementServer.class, String.class, "ovm3.guest.network.device", null, "Specify the guest bridge on host for guest network", null),
+    Ovm3StorageNetwork("Hidden", ManagementServer.class, String.class, "ovm3.storage.network.device", null, "Specify the storage bridge on host for storage network", null),
+    Ovm3HeartBeatTimeout(
+            "Advanced",
+            ManagementServer.class,
+            Integer.class,
+            "ovm3.heartbeat.timeout",
+            "120",
+            "timeout used for primary storage check, upon timeout a panic is triggered.",
+            null),
+    Ovm3HeartBeatInterval(
+            "Advanced",
+            ManagementServer.class,
+            Integer.class,
+            "ovm3.heartbeat.interval",
+            "1",
+            "interval used to check primary storage availability.",
+            null),
+
+
     // XenServer
     XenServerPublicNetwork(
             "Hidden",
@@ -1371,86 +1385,6 @@ public enum Config {
             "300000",
             "The allowable clock difference in milliseconds between when an SSO login request is made and when it is received.",
             null),
-    SAMLIsPluginEnabled(
-            "Advanced",
-            ManagementServer.class,
-            Boolean.class,
-            "saml2.enabled",
-            "false",
-            "Set it to true to enable SAML SSO plugin",
-            null),
-    SAMLUserAccountName(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.default.accountname",
-            "admin",
-            "The name of the default account to use when creating users from SAML SSO",
-            null),
-    SAMLUserDomain(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.default.domainid",
-            "1",
-            "The default domain UUID to use when creating users from SAML SSO",
-            null),
-    SAMLCloudStackRedirectionUrl(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.redirect.url",
-            "http://localhost:8080/client",
-            "The CloudStack UI url the SSO should redirected to when successful",
-            null),
-    SAMLServiceProviderID(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.sp.id",
-            "org.apache.cloudstack",
-            "SAML2 Service Provider Identifier String",
-            null),
-    SAMLServiceProviderSingleSignOnURL(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.sp.sso.url",
-            "http://localhost:8080/client/api?command=samlSso",
-            "SAML2 CloudStack Service Provider Single Sign On URL",
-            null),
-    SAMLServiceProviderSingleLogOutURL(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.sp.slo.url",
-            "http://localhost:8080/client/api?command=samlSlo",
-            "SAML2 CloudStack Service Provider Single Log Out URL",
-            null),
-    SAMLIdentityProviderID(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.idp.id",
-            "https://openidp.feide.no",
-            "SAML2 Identity Provider Identifier String",
-            null),
-    SAMLIdentityProviderMetadataURL(
-            "Advanced",
-            ManagementServer.class,
-            String.class,
-            "saml2.idp.metadata.url",
-            "https://openidp.feide.no/simplesaml/saml2/idp/metadata.php",
-            "SAML2 Identity Provider Metadata XML Url",
-            null),
-    SAMLTimeout(
-            "Advanced",
-            ManagementServer.class,
-            Long.class,
-            "saml2.timeout",
-            "30000",
-            "SAML2 IDP Metadata Downloading and parsing etc. activity timeout in milliseconds",
-            null),
     //NetworkType("Hidden", ManagementServer.class, String.class, "network.type", "vlan", "The type of network that this deployment will use.", "vlan,direct"),
     RouterRamSize("Hidden", NetworkOrchestrationService.class, Integer.class, "router.ram.size", "256", "Default RAM for router VM (in MB).", null),
 
@@ -1600,13 +1534,22 @@ public enum Config {
             "Percentage (as a value between 0 and 1) of connected agents after which agent load balancing will start happening",
             null),
 
-    JavaScriptDefaultContentType(
+    JSONDefaultContentType(
             "Advanced",
             ManagementServer.class,
             String.class,
             "json.content.type",
-            "text/javascript",
-            "Http response content type for .js files (default is text/javascript)",
+            "application/json; charset=UTF-8",
+            "Http response content type for JSON",
+            null),
+
+    EnableSecureSessionCookie(
+            "Advanced",
+            ManagementServer.class,
+            Boolean.class,
+            "enable.secure.session.cookie",
+            "false",
+            "Session cookie's secure flag is enabled if true. Use this only when using HTTPS",
             null),
 
     DefaultMaxDomainUserVms("Domain Defaults", ManagementServer.class, Long.class, "max.domain.user.vms", "40", "The default maximum number of user VMs that can be deployed for a domain", null),
@@ -2001,16 +1944,6 @@ public enum Config {
     VMSnapshotCreateWait("Advanced", VMSnapshotManager.class, Integer.class, "vmsnapshot.create.wait", "1800", "In second, timeout for create vm snapshot", null),
 
     CloudDnsName("Advanced", ManagementServer.class, String.class, "cloud.dns.name", null, "DNS name of the cloud for the GSLB service", null),
-
-    BlacklistedRoutes(
-            "Advanced",
-            VpcManager.class,
-            String.class,
-            "blacklisted.routes",
-            null,
-            "Routes that are blacklisted, can not be used for Static Routes creation for the VPC Private Gateway",
-            "routes",
-            ConfigKey.Scope.Zone.toString()),
     InternalLbVmServiceOfferingId(
             "Advanced",
             ManagementServer.class,
@@ -2064,7 +1997,9 @@ public enum Config {
     PublishAsynJobEvent("Advanced", ManagementServer.class, Boolean.class, "publish.async.job.events", "true", "enable or disable publishing of usage events on the event bus", null),
 
     // StatsCollector
-    StatsOutPutGraphiteHost("Advanced", ManagementServer.class, String.class, "stats.output.uri", "", "URI to additionally send StatsCollector statistics to", null);
+    StatsOutPutGraphiteHost("Advanced", ManagementServer.class, String.class, "stats.output.uri", "", "URI to additionally send StatsCollector statistics to", null),
+
+    SSVMPSK("Hidden", ManagementServer.class, String.class, "upload.post.secret.key", "", "PSK with SSVM", null);
 
     private final String _category;
     private final Class<?> _componentClass;

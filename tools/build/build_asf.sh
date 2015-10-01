@@ -96,6 +96,11 @@ perl -pi -e "s/<cs.xapi.version>6.2.0-1-SNAPSHOT<\/cs.xapi.version>/<cs.xapi.ver
 perl -pi -e "s/-SNAPSHOT//" tools/checkstyle/pom.xml
 perl -pi -e "s/-SNAPSHOT//" deps/XenServerJava/pom.xml
 perl -pi -e "s/-SNAPSHOT//" tools/apidoc/pom.xml
+perl -pi -e "s/-SNAPSHOT//" Dockerfile
+perl -pi -e "s/-SNAPSHOT//" build/replace.properties
+perl -pi -e "s/-SNAPSHOT//" services/console-proxy/plugin/pom.xml
+perl -pi -e "s/-SNAPSHOT//" tools/marvin/setup.py
+perl -pi -e "s/-SNAPSHOT//" tools/marvin/marvin/deployAndRun.py
 case "$currentversion" in 
   *-SNAPSHOT*)
     perl -pi -e 's/-SNAPSHOT//' debian/rules
@@ -108,7 +113,7 @@ echo "cloudstack ($version) unstable; urgency=low" >>$tmpfilenm
 echo >>$tmpfilenm
 echo "  * Update the version to $version" >>$tmpfilenm
 echo >>$tmpfilenm
-echo " -- the Apache CloudStack project <dev@cloudstack.apache.org>  `date -j '+%a, %d %b %Y %T %z'`" >>$tmpfilenm
+echo " -- the Apache CloudStack project <dev@cloudstack.apache.org>  `date '+%a, %d %b %Y %T %z'`" >>$tmpfilenm
 echo >>$tmpfilenm
 
 cat debian/changelog >>$tmpfilenm
@@ -118,8 +123,13 @@ git clean -f
 
 #create a RC branch
 RELEASE_BRANCH="RC"`date +%Y%m%dT%H%M`
-git branch $branch-$RELEASE_BRANCH
-git checkout $branch-$RELEASE_BRANCH
+if [ "$branch" = "master" ]; then
+  BRANCHNAME=$version-$RELEASE_BRANCH
+else
+  BRANCHNAME=$branch-$RELEASE_BRANCH
+fi
+git branch $BRANCHNAME
+git checkout $BRANCHNAME
 
 
 echo 'commit changes'
@@ -129,7 +139,7 @@ export commitsh=`git show HEAD | head -n 1 | cut -d ' ' -f 2`
 echo "committed as $commitsh"
 
 echo 'archiving'
-git archive --format=tar --prefix=apache-cloudstack-$version-src/ $branch-$RELEASE_BRANCH > $outputdir/apache-cloudstack-$version-src.tar
+git archive --format=tar --prefix=apache-cloudstack-$version-src/ $BRANCHNAME > $outputdir/apache-cloudstack-$version-src.tar
 bzip2 $outputdir/apache-cloudstack-$version-src.tar
 
 cd $outputdir

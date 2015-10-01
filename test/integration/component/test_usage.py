@@ -37,7 +37,9 @@ from marvin.lib.base import (Account,
                              Volume)
 from marvin.lib.common import (get_zone,
                                get_domain,
-                               get_template)
+                               get_template,
+                               find_storage_pool_type)
+
 
 
 class Services:
@@ -102,6 +104,7 @@ class Services:
                 "name": "SSH",
                 "alg": "roundrobin",
                 # Algorithm used for load balancing
+                "openfirewall":"false",
                 "privateport": 22,
                 "publicport": 2222,
             },
@@ -492,10 +495,18 @@ class TestVolumeUsage(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -511,6 +522,7 @@ class TestVolumeUsage(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.services["account"] = cls.account.name
 
@@ -518,6 +530,7 @@ class TestVolumeUsage(cloudstackTestCase):
             cls.api_client,
             cls.services["service_offering"]
         )
+        cls._cleanup.append(cls.service_offering)
         cls.virtual_machine = VirtualMachine.create(
             cls.api_client,
             cls.services["server"],
@@ -526,11 +539,6 @@ class TestVolumeUsage(cloudstackTestCase):
             domainid=cls.account.domainid,
             serviceofferingid=cls.service_offering.id
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account,
-        ]
         return
 
     @classmethod
@@ -546,6 +554,9 @@ class TestVolumeUsage(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("Skipping because of unsupported storage type")
         return
 
     def tearDown(self):
@@ -678,6 +689,7 @@ class TestTemplateUsage(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
         cls.services["server"]["zoneid"] = cls.zone.id
         template = get_template(
             cls.api_client,
@@ -775,6 +787,9 @@ class TestTemplateUsage(cloudstackTestCase):
         # 4. Destroy the account
 
         # Create template from Virtual machine and Volume ID
+        if self.hypervisor.lower() == 'lxc':
+            self.skipTest(
+                "template create from volume is not supported on %s . Hence, skipping the test" % self.hypervisor)
         self.template = Template.create(
             self.userapiclient,
             self.services["templates"],
@@ -916,7 +931,7 @@ class TestISOUsage(cloudstackTestCase):
             "sg",
             "eip",
             "advancedns"],
-        required_hardware="false")
+        required_hardware="true")
     def test_01_ISO_usage(self):
         """Test Create/Delete a ISO and verify its usage is generated correctly
         """
@@ -1168,12 +1183,17 @@ class TestSnapshotUsage(cloudstackTestCase):
     def setUpClass(cls):
         cls.testClient = super(TestSnapshotUsage, cls).getClsTestClient()
         cls.api_client = cls.testClient.getApiClient()
-        cls.hypervisor = cls.testClient.getHypervisorInfo()
         cls.services = Services().services
         # Get Zone, Domain and templates
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedHypervisor = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() in ['hyperv', 'lxc']:
+            cls.unsupportedHypervisor = True
+            return
 
         template = get_template(
             cls.api_client,
@@ -1224,6 +1244,10 @@ class TestSnapshotUsage(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedHypervisor:
+            self.skipTest("Snapshots are not supported on %s" %
+                    self.hypervisor)
         return
 
     def tearDown(self):

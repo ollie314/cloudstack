@@ -48,6 +48,7 @@ public class ApiConstants {
     public static final String IP6_CIDR = "ip6cidr";
     public static final String CIDR_LIST = "cidrlist";
     public static final String CLEANUP = "cleanup";
+    public static final String MAKEREDUNDANTE = "makeredundant";
     public static final String CLUSTER_ID = "clusterid";
     public static final String CLUSTER_NAME = "clustername";
     public static final String CLUSTER_TYPE = "clustertype";
@@ -179,6 +180,7 @@ public class ApiConstants {
     public static final String PARAMS = "params";
     public static final String PARENT_DOMAIN_ID = "parentdomainid";
     public static final String PASSWORD = "password";
+    public static final String SHOULD_UPDATE_PASSWORD = "update_passwd_on_host";
     public static final String NEW_PASSWORD = "new_password";
     public static final String PASSWORD_ENABLED = "passwordenabled";
     public static final String SSHKEY_ENABLED = "sshkeyenabled";
@@ -190,6 +192,7 @@ public class ApiConstants {
     public static final String PORTAL = "portal";
     public static final String PORTABLE_IP_ADDRESS = "portableipaddress";
     public static final String PORT_FORWARDING_SERVICE_ID = "portforwardingserviceid";
+    public static final String POST_URL = "postURL";
     public static final String PRIVATE_INTERFACE = "privateinterface";
     public static final String PRIVATE_IP = "privateip";
     public static final String PRIVATE_PORT = "privateport";
@@ -268,6 +271,7 @@ public class ApiConstants {
     public static final String VIRTUAL_MACHINE_ID = "virtualmachineid";
     public static final String VIRTUAL_MACHINE_IDS = "virtualmachineids";
     public static final String VIRTUAL_MACHINE_ID_IP = "vmidipmap";
+    public static final String VIRTUAL_MACHINE_COUNT = "virtualmachinecount";
     public static final String USAGE_ID = "usageid";
 
     public static final String VLAN = "vlan";
@@ -373,6 +377,7 @@ public class ApiConstants {
     public static final String ISOLATION_METHODS = "isolationmethods";
     public static final String PHYSICAL_NETWORK_ID = "physicalnetworkid";
     public static final String DEST_PHYSICAL_NETWORK_ID = "destinationphysicalnetworkid";
+    public static final String ENABLE = "enable";
     public static final String ENABLED = "enabled";
     public static final String SERVICE_NAME = "servicename";
     public static final String DHCP_RANGE = "dhcprange";
@@ -380,10 +385,11 @@ public class ApiConstants {
     public static final String SECURITY_GROUP_EANBLED = "securitygroupenabled";
     public static final String LOCAL_STORAGE_ENABLED = "localstorageenabled";
     public static final String GUEST_IP_TYPE = "guestiptype";
-    public static final String XENSERVER_NETWORK_LABEL = "xenservernetworklabel";
+    public static final String XENSERVER_NETWORK_LABEL = "xennetworklabel";
     public static final String KVM_NETWORK_LABEL = "kvmnetworklabel";
     public static final String VMWARE_NETWORK_LABEL = "vmwarenetworklabel";
     public static final String HYPERV_NETWORK_LABEL = "hypervnetworklabel";
+    public static final String OVM3_NETWORK_LABEL = "ovm3networklabel";
     public static final String NETWORK_SERVICE_PROVIDER_ID = "nspid";
     public static final String SERVICE_LIST = "servicelist";
     public static final String CAN_ENABLE_INDIVIDUAL_SERVICE = "canenableindividualservice";
@@ -449,7 +455,7 @@ public class ApiConstants {
     public static final String EXTERNAL_SWITCH_MGMT_DEVICE_NAME = "vsmdevicename";
     public static final String EXTERNAL_SWITCH_MGMT_DEVICE_STATE = "vsmdevicestate";
     // Would we need to have a capacity field for Cisco N1KV VSM? Max hosts managed by it perhaps? May remove this
-// later.
+    // later.
     public static final String EXTERNAL_SWITCH_MGMT_DEVICE_CAPACITY = "vsmdevicecapacity";
     public static final String CISCO_NEXUS_VSM_NAME = "vsmname";
     public static final String VSM_USERNAME = "vsmusername";
@@ -497,8 +503,10 @@ public class ApiConstants {
     public static final String S3_BUCKET_NAME = "bucket";
     public static final String S3_HTTPS_FLAG = "usehttps";
     public static final String S3_CONNECTION_TIMEOUT = "connectiontimeout";
+    public static final String S3_CONNECTION_TTL = "connectionttl";
     public static final String S3_MAX_ERROR_RETRY = "maxerrorretry";
     public static final String S3_SOCKET_TIMEOUT = "sockettimeout";
+    public static final String S3_USE_TCP_KEEPALIVE = "usetcpkeepalive";
     public static final String INCL_ZONES = "includezones";
     public static final String EXCL_ZONES = "excludezones";
     public static final String SOURCE = "source";
@@ -515,7 +523,7 @@ public class ApiConstants {
     public static final String VMPROFILE_ID = "vmprofileid";
     public static final String VMGROUP_ID = "vmgroupid";
     public static final String CS_URL = "csurl";
-    public static final String IDP_URL = "idpurl";
+    public static final String IDP_ID = "idpid";
     public static final String SCALEUP_POLICY_IDS = "scaleuppolicyids";
     public static final String SCALEDOWN_POLICY_IDS = "scaledownpolicyids";
     public static final String SCALEUP_POLICIES = "scaleuppolicies";
@@ -607,13 +615,20 @@ public class ApiConstants {
     public static final String REMAININGCAPACITY = "remainingcapacity";
     public static final String MAXCAPACITY = "maxcapacity";
     public static final String DISTRIBUTED_VPC_ROUTER = "distributedvpcrouter";
+    public static final String REDUNDANT_VPC_ROUTER = "redundantvpcrouter";
     public static final String READ_ONLY = "readonly";
     public static final String SUPPORTS_REGION_LEVEL_VPC = "supportsregionLevelvpc";
     public static final String SUPPORTS_STRECHED_L2_SUBNET = "supportsstrechedl2subnet";
     public static final String REGION_LEVEL_VPC = "regionlevelvpc";
     public static final String STRECHED_L2_SUBNET = "strechedl2subnet";
     public static final String NETWORK_SPANNED_ZONES = "zonesnetworkspans";
+    public static final String METADATA = "metadata";
     public static final String PHYSICAL_SIZE = "physicalsize";
+    public static final String OVM3_POOL = "ovm3pool";
+    public static final String OVM3_CLUSTER = "ovm3cluster";
+    public static final String OVM3_VIP = "ovm3vip";
+
+    public static final String ADMIN = "admin";
 
     public enum HostDetails {
         all, capacity, events, stats, min;

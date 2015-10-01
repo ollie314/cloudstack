@@ -36,7 +36,8 @@ from marvin.lib.base import (Account,
 from marvin.lib.common import (get_domain,
                                get_zone,
                                get_template,
-                               get_pod)
+                               get_pod,
+                               find_storage_pool_type)
 from marvin.codes import PASS
 # Import System modules
 import time
@@ -113,10 +114,18 @@ class TestAttachVolume(cloudstackTestCase):
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.pod = get_pod(cls.api_client, cls.zone.id)
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -150,11 +159,13 @@ class TestAttachVolume(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.service_offering = ServiceOffering.create(
             cls.api_client,
             cls.services["service_offering"]
         )
+        cls._cleanup.append(cls.service_offering)
         cls.virtual_machine = VirtualMachine.create(
             cls.api_client,
             cls.services["virtual_machine"],
@@ -162,17 +173,15 @@ class TestAttachVolume(cloudstackTestCase):
             domainid=cls.account.domainid,
             serviceofferingid=cls.service_offering.id,
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account
-        ]
 
     def setUp(self):
 
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("Skipping because of unsupported storage type")
 
     def tearDown(self):
         try:
@@ -374,10 +383,18 @@ class TestAttachDetachVolume(cloudstackTestCase):
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.pod = get_pod(cls.api_client, cls.zone.id)
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -411,11 +428,13 @@ class TestAttachDetachVolume(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.service_offering = ServiceOffering.create(
             cls.api_client,
             cls.services["service_offering"]
         )
+        cls._cleanup.append(cls.service_offering)
         cls.virtual_machine = VirtualMachine.create(
             cls.api_client,
             cls.services["virtual_machine"],
@@ -423,17 +442,15 @@ class TestAttachDetachVolume(cloudstackTestCase):
             domainid=cls.account.domainid,
             serviceofferingid=cls.service_offering.id,
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account
-        ]
 
     def setUp(self):
 
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("RBD storage type is required for data volumes for LXC")
 
     def tearDown(self):
         # Clean up, terminate the created volumes
@@ -603,10 +620,18 @@ class TestAttachVolumeISO(cloudstackTestCase):
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.pod = get_pod(cls.api_client, cls.zone.id)
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -641,11 +666,13 @@ class TestAttachVolumeISO(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.service_offering = ServiceOffering.create(
             cls.api_client,
             cls.services["service_offering"]
         )
+        cls._cleanup.append(cls.service_offering)
         cls.virtual_machine = VirtualMachine.create(
             cls.api_client,
             cls.services["virtual_machine"],
@@ -653,11 +680,6 @@ class TestAttachVolumeISO(cloudstackTestCase):
             domainid=cls.account.domainid,
             serviceofferingid=cls.service_offering.id,
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account
-        ]
 
     @classmethod
     def tearDownClass(cls):
@@ -672,6 +694,9 @@ class TestAttachVolumeISO(cloudstackTestCase):
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
 
+        if self.unsupportedStorageType:
+            self.skipTest("RBD storage type is required for data volumes for LXC")
+
     def tearDown(self):
         try:
             # Clean up, terminate the created instance, volumes and snapshots
@@ -680,7 +705,7 @@ class TestAttachVolumeISO(cloudstackTestCase):
             raise Exception("Warning: Exception during cleanup : %s" % e)
         return
 
-    @attr(tags=["advanced", "advancedns"])
+    @attr(tags=["advanced", "advancedns"], required_hardware="true")
     def test_01_volume_iso_attach(self):
         """Test Volumes and ISO attach
         """
@@ -691,6 +716,8 @@ class TestAttachVolumeISO(cloudstackTestCase):
         # 3. Verify that attach ISO is successful
 
         # Create 5 volumes and attach to VM
+        if self.hypervisor.lower() in ["lxc"]:
+            self.skipTest("attach ISO is not supported on LXC")
         for i in range(self.max_data_volumes):
             volume = Volume.create(
                 self.apiclient,
@@ -815,10 +842,18 @@ class TestVolumes(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -836,11 +871,13 @@ class TestVolumes(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.service_offering = ServiceOffering.create(
             cls.api_client,
             cls.services["service_offering"]
         )
+        cls._cleanup.append(cls.service_offering)
         cls.virtual_machine = VirtualMachine.create(
             cls.api_client,
             cls.services["virtual_machine"],
@@ -857,11 +894,6 @@ class TestVolumes(cloudstackTestCase):
             domainid=cls.account.domainid,
             diskofferingid=cls.disk_offering.id
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account
-        ]
 
     @classmethod
     def tearDownClass(cls):
@@ -874,6 +906,9 @@ class TestVolumes(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("RBD storage type is required for data volumes for LXC")
 
     def tearDown(self):
         # Clean up, terminate the created volumes
@@ -1128,11 +1163,19 @@ class TestDeployVmWithCustomDisk(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"],
             custom=True
         )
+        cls._cleanup.append(cls.disk_offering)
         template = get_template(
             cls.api_client,
             cls.zone.id,
@@ -1148,22 +1191,22 @@ class TestDeployVmWithCustomDisk(cloudstackTestCase):
             cls.services["account"],
             domainid=cls.domain.id
         )
+        cls._cleanup.append(cls.account)
 
         cls.service_offering = ServiceOffering.create(
             cls.api_client,
             cls.services["service_offering"]
         )
-        cls._cleanup = [
-            cls.service_offering,
-            cls.disk_offering,
-            cls.account
-        ]
+        cls._cleanup.append(cls.service_offering)
 
     def setUp(self):
 
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("RBD storage type is required for data volumes for LXC")
 
     @attr(tags=["advanced", "configuration", "advancedns", "simulator",
                 "api", "basic", "eip", "sg"])
@@ -1262,6 +1305,13 @@ class TestMigrateVolume(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cls.testClient.getZoneForTests())
         cls.services['mode'] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        cls.hypervisor = cls.testClient.getHypervisorInfo()
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
         cls.disk_offering = DiskOffering.create(
             cls.api_client,
             cls.services["disk_offering"]
@@ -1313,6 +1363,9 @@ class TestMigrateVolume(cloudstackTestCase):
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
+
+        if self.unsupportedStorageType:
+            self.skipTest("RBD storage type is required for data volumes for LXC")
         return
 
     def tearDown(self):

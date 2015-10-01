@@ -16,12 +16,15 @@
 // under the License.
 package com.cloud.template;
 
+import java.net.MalformedURLException;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,8 +33,17 @@ import javax.ejb.Local;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
-import org.apache.log4j.Logger;
+import com.cloud.storage.ImageStoreUploadMonitorImpl;
+import com.cloud.utils.EncryptionUtil;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
+import org.apache.cloudstack.api.command.user.template.GetUploadParamsForTemplateCmd;
+import org.apache.cloudstack.api.response.GetUploadParamsResponse;
+import org.apache.cloudstack.storage.command.TemplateOrVolumePostUploadCommand;
+import org.apache.cloudstack.utils.imagestore.ImageStoreUtil;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.log4j.Logger;
 import org.apache.cloudstack.acl.SecurityChecker.AccessType;
 import org.apache.cloudstack.api.ApiConstants;
 import org.apache.cloudstack.api.BaseListTemplateOrIsoPermissionsCmd;
@@ -179,6 +191,9 @@ import com.cloud.vm.VirtualMachineProfile;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
+
 @Local(value = {TemplateManager.class, TemplateApiService.class})
 public class TemplateManagerImpl extends ManagerBase implements TemplateManager, TemplateApiService, Configurable {
     private final static Logger s_logger = Logger.getLogger(TemplateManagerImpl.class);
@@ -254,9 +269,9 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     MessageBus _messageBus;
 
     private boolean _disableExtraction = false;
-    private ExecutorService _preloadExecutor;
-
     private List<TemplateAdapter> _adapters;
+
+    ExecutorService _preloadExecutor;
 
     @Inject
     private StorageCacheManager cacheMgr;
@@ -320,6 +335,61 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     }
 
     @Override
+    @ActionEvent(eventType = EventTypes.EVENT_TEMPLATE_CREATE, eventDescription = "creating post upload template")
+    public GetUploadParamsResponse registerTemplateForPostUpload(GetUploadParamsForTemplateCmd cmd) throws ResourceAllocationException, MalformedURLException {
+        TemplateAdapter adapter = getAdapter(HypervisorType.getType(cmd.getHypervisor()));
+        TemplateProfile profile = adapter.prepare(cmd);
+        List<TemplateOrVolumePostUploadCommand> payload = adapter.createTemplateForPostUpload(profile);
+
+        if(CollectionUtils.isNotEmpty(payload)) {
+            GetUploadParamsResponse response = new GetUploadParamsResponse();
+
+            /*
+             * There can be one or more commands depending on the number of secondary stores the template needs to go to. Taking the first one to do the url upload. The
+             * template will be propagated to the rest through copy by management server commands.
+             */
+            TemplateOrVolumePostUploadCommand firstCommand = payload.get(0);
+
+            String ssvmUrlDomain = _configDao.getValue(Config.SecStorageSecureCopyCert.key());
+
+            String url = ImageStoreUtil.generatePostUploadUrl(ssvmUrlDomain, firstCommand.getRemoteEndPoint(), firstCommand.getEntityUUID());
+            response.setPostURL(new URL(url));
+
+            // set the post url, this is used in the monitoring thread to determine the SSVM
+            TemplateDataStoreVO templateStore = _tmplStoreDao.findByTemplate(firstCommand.getEntityId(), DataStoreRole.getRole(firstCommand.getDataToRole()));
+            if (templateStore != null) {
+                templateStore.setExtractUrl(url);
+                _tmplStoreDao.persist(templateStore);
+            }
+
+            response.setId(UUID.fromString(firstCommand.getEntityUUID()));
+
+            int timeout = ImageStoreUploadMonitorImpl.getUploadOperationTimeout();
+            DateTime currentDateTime = new DateTime(DateTimeZone.UTC);
+            String expires = currentDateTime.plusMinutes(timeout).toString();
+            response.setTimeout(expires);
+
+            String key = _configDao.getValue(Config.SSVMPSK.key());
+            /*
+             * encoded metadata using the post upload config ssh key
+             */
+            Gson gson = new GsonBuilder().create();
+            String metadata = EncryptionUtil.encodeData(gson.toJson(firstCommand), key);
+            response.setMetadata(metadata);
+
+            /*
+             * signature calculated on the url, expiry, metadata.
+             */
+            response.setSignature(EncryptionUtil.generateSignature(metadata + url + expires, key));
+
+            return response;
+        } else {
+            throw new CloudRuntimeException("Unable to register template.");
+        }
+    }
+
+
+    @Override
     public DataStore getImageStore(String storeUuid, Long zoneId) {
         DataStore imageStore = null;
         if (storeUuid != null) {
@@ -366,7 +436,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
     }
 
     @Override
-    public VirtualMachineTemplate prepareTemplate(long templateId, long zoneId) {
+    public VirtualMachineTemplate prepareTemplate(long templateId, long zoneId, Long storageId) {
 
         VMTemplateVO vmTemplate = _tmpltDao.findById(templateId);
         if (vmTemplate == null) {
@@ -375,7 +445,19 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         _accountMgr.checkAccess(CallContext.current().getCallingAccount(), AccessType.OperateEntry, true, vmTemplate);
 
-        prepareTemplateInAllStoragePools(vmTemplate, zoneId);
+        if (storageId != null) {
+            StoragePoolVO pool = _poolDao.findById(storageId);
+            if (pool != null) {
+                if (pool.getStatus() == StoragePoolStatus.Up && pool.getDataCenterId() == zoneId) {
+                    prepareTemplateInOneStoragePool(vmTemplate, pool);
+                } else {
+                    s_logger.warn("Skip loading template " + vmTemplate.getId() + " into primary storage " + pool.getId() + " as either the pool zone "
+                            + pool.getDataCenterId() + " is different from the requested zone " + zoneId + " or the pool is currently not available.");
+                }
+            }
+        } else {
+            prepareTemplateInAllStoragePools(vmTemplate, zoneId);
+        }
         return vmTemplate;
     }
 
@@ -419,7 +501,7 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         _accountMgr.checkAccess(caller, AccessType.OperateEntry, true, template);
 
-        List<DataStore> ssStores = _dataStoreMgr.getImageStoresByScope(new ZoneScope(zoneId));
+        List<DataStore> ssStores = _dataStoreMgr.getImageStoresByScope(new ZoneScope(null));
 
         TemplateDataStoreVO tmpltStoreRef = null;
         ImageStoreEntity tmpltStore = null;
@@ -486,28 +568,32 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         }
     }
 
+    private void prepareTemplateInOneStoragePool(final VMTemplateVO template, final StoragePoolVO pool) {
+        s_logger.info("Schedule to preload template " + template.getId() + " into primary storage " + pool.getId());
+        _preloadExecutor.execute(new ManagedContextRunnable() {
+            @Override
+            protected void runInContext() {
+                try {
+                    reallyRun();
+                } catch (Throwable e) {
+                    s_logger.warn("Unexpected exception ", e);
+                }
+            }
+
+            private void reallyRun() {
+                s_logger.info("Start to preload template " + template.getId() + " into primary storage " + pool.getId());
+                StoragePool pol = (StoragePool)_dataStoreMgr.getPrimaryDataStore(pool.getId());
+                prepareTemplateForCreate(template, pol);
+                s_logger.info("End of preloading template " + template.getId() + " into primary storage " + pool.getId());
+            }
+        });
+    }
+
     public void prepareTemplateInAllStoragePools(final VMTemplateVO template, long zoneId) {
         List<StoragePoolVO> pools = _poolDao.listByStatus(StoragePoolStatus.Up);
         for (final StoragePoolVO pool : pools) {
             if (pool.getDataCenterId() == zoneId) {
-                s_logger.info("Schedule to preload template " + template.getId() + " into primary storage " + pool.getId());
-                _preloadExecutor.execute(new ManagedContextRunnable() {
-                    @Override
-                    protected void runInContext() {
-                        try {
-                            reallyRun();
-                        } catch (Throwable e) {
-                            s_logger.warn("Unexpected exception ", e);
-                        }
-                    }
-
-                    private void reallyRun() {
-                        s_logger.info("Start to preload template " + template.getId() + " into primary storage " + pool.getId());
-                        StoragePool pol = (StoragePool)_dataStoreMgr.getPrimaryDataStore(pool.getId());
-                        prepareTemplateForCreate(template, pol);
-                        s_logger.info("End of preloading template " + template.getId() + " into primary storage " + pool.getId());
-                    }
-                });
+                prepareTemplateInOneStoragePool(template, pool);
             } else {
                 s_logger.info("Skip loading template " + template.getId() + " into primary storage " + pool.getId() + " as pool zone " + pool.getDataCenterId() +
                         " is different from the requested zone " + zoneId);
@@ -1254,6 +1340,11 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             throw new InvalidParameterValueException("Update template permissions is an invalid operation on template " + template.getName());
         }
 
+        //Only admin or owner of the template should be able to change its permissions
+        if (caller.getId() != ownerId && !isAdmin) {
+            throw new InvalidParameterValueException("Unable to grant permission to account " + caller.getAccountName() + " as it is neither admin nor owner or the template");
+        }
+
         VMTemplateVO updatedTemplate = _tmpltDao.createForUpdate();
 
         if (isPublic != null) {
@@ -1749,10 +1840,11 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
         String displayText = cmd.getDisplayText();
         String format = cmd.getFormat();
         Long guestOSId = cmd.getOsTypeId();
-        Boolean passwordEnabled = cmd.isPasswordEnabled();
+        Boolean passwordEnabled = cmd.getPasswordEnabled();
         Boolean isDynamicallyScalable = cmd.isDynamicallyScalable();
         Boolean isRoutingTemplate = cmd.isRoutingType();
-        Boolean bootable = cmd.isBootable();
+        Boolean bootable = cmd.getBootable();
+        Boolean requiresHvm = cmd.getRequiresHvm();
         Integer sortKey = cmd.getSortKey();
         Map details = cmd.getDetails();
         Account account = CallContext.current().getCallingAccount();
@@ -1775,9 +1867,19 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
             }
         }
 
+        // update is needed if any of the fields below got filled by the user
         boolean updateNeeded =
-                !(name == null && displayText == null && format == null && guestOSId == null && passwordEnabled == null && bootable == null && sortKey == null &&
-                        isDynamicallyScalable == null && isRoutingTemplate == null && details == null);
+                !(name == null &&
+                  displayText == null &&
+                  format == null &&
+                  guestOSId == null &&
+                  passwordEnabled == null &&
+                  bootable == null &&
+                  requiresHvm == null &&
+                  sortKey == null &&
+                  isDynamicallyScalable == null &&
+                  isRoutingTemplate == null &&
+                  details == null);
         if (!updateNeeded) {
             return template;
         }
@@ -1837,6 +1939,10 @@ public class TemplateManagerImpl extends ManagerBase implements TemplateManager,
 
         if (bootable != null) {
             template.setBootable(bootable);
+        }
+
+        if (requiresHvm != null) {
+            template.setRequiresHvm(requiresHvm);
         }
 
         if (isDynamicallyScalable != null) {

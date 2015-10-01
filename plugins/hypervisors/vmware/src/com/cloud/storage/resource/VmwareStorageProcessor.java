@@ -20,7 +20,9 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.rmi.RemoteException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -105,12 +107,13 @@ import com.cloud.vm.VirtualMachine.PowerState;
 
 public class VmwareStorageProcessor implements StorageProcessor {
     private static final Logger s_logger = Logger.getLogger(VmwareStorageProcessor.class);
+    private static final int DEFAULT_NFS_PORT = 2049;
 
-    private VmwareHostService hostService;
-    private boolean _fullCloneFlag;
-    private VmwareStorageMount mountService;
-    private VmwareResource resource;
-    private Integer _timeout;
+    private final VmwareHostService hostService;
+    private final boolean _fullCloneFlag;
+    private final VmwareStorageMount mountService;
+    private final VmwareResource resource;
+    private final Integer _timeout;
     protected Integer _shutdownWaitMs;
     private final Gson _gson;
     private final StorageLayer _storage = new JavaStorageLayer();
@@ -297,8 +300,8 @@ public class VmwareStorageProcessor implements StorageProcessor {
                 final ManagedObjectReference morDs;
 
                 if (managed) {
-                    morDs = prepareManagedDatastore(context, hyperHost, managedStoragePoolName, storageHost, storagePort,
-                            chapInitiatorUsername, chapInitiatorSecret, chapTargetUsername, chapTargetSecret);
+                    morDs = prepareManagedDatastore(context, hyperHost, null, managedStoragePoolName, storageHost, storagePort,
+                                chapInitiatorUsername, chapInitiatorSecret, chapTargetUsername, chapTargetSecret);
                 }
                 else {
                     morDs = HypervisorHostHelper.findDatastoreWithBackwardsCompatibility(hyperHost, storageUuid);
@@ -344,6 +347,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
             else {
                 newTemplate.setPath(templateUuidName);
             }
+            newTemplate.setSize(new Long(0)); // TODO: replace 0 with correct template physical_size.
 
             return new CopyCmdAnswer(newTemplate);
         } catch (Throwable e) {
@@ -678,7 +682,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
         // TODO a bit ugly here
         BufferedWriter out = null;
         try {
-            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/template.properties")));
+            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/template.properties"),"UTF-8"));
             out.write("filename=" + templateName + ".ova");
             out.newLine();
             out.write("description=");
@@ -732,7 +736,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
 
         VirtualMachineMO clonedVm = null;
         try {
-            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath, false);
+            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath);
             if (volumeDeviceInfo == null) {
                 String msg = "Unable to find related disk device for volume. volume path: " + volumePath;
                 s_logger.error(msg);
@@ -857,7 +861,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
         // TODO a bit ugly here
         BufferedWriter out = null;
         try {
-            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/" + templateName + ".ova.meta")));
+            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/" + templateName + ".ova.meta"),"UTF-8"));
             out.write("ova.filename=" + templateName + ".ova");
             out.newLine();
             out.write("version=1.0");
@@ -1064,7 +1068,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
         VirtualMachineMO clonedVm = null;
         try {
 
-            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath, false);
+            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath);
             if (volumeDeviceInfo == null) {
                 String msg = "Unable to find related disk device for volume. volume path: " + volumePath;
                 s_logger.error(msg);
@@ -1215,7 +1219,7 @@ public class VmwareStorageProcessor implements StorageProcessor {
                             for (String vmdkDsFilePath : backupResult.third()) {
                                 s_logger.info("Validate disk chain file:" + vmdkDsFilePath);
 
-                                if (vmMo.getDiskDevice(vmdkDsFilePath, false) == null) {
+                                if (vmMo.getDiskDevice(vmdkDsFilePath) == null) {
                                     s_logger.info("" + vmdkDsFilePath + " no longer exists, consolidation detected");
                                     chainConsolidated = true;
                                     break;
@@ -1299,28 +1303,33 @@ public class VmwareStorageProcessor implements StorageProcessor {
             VmwareHypervisorHost hyperHost = hostService.getHyperHost(context, null);
             VirtualMachineMO vmMo = hyperHost.findVmOnHyperHost(vmName);
             if (vmMo == null) {
-                String msg = "Unable to find the VM to execute AttachVolumeCommand, vmName: " + vmName;
+                String msg = "Unable to find the VM to execute AttachCommand, vmName: " + vmName;
                 s_logger.error(msg);
                 throw new Exception(msg);
             }
             vmName = vmMo.getName();
 
             ManagedObjectReference morDs = null;
+            String diskUuid =  volumeTO.getUuid().replace("-", "");
 
             if (isAttach && isManaged) {
                 Map<String, String> details = disk.getDetails();
 
-                morDs = prepareManagedStorage(context, hyperHost, iScsiName, storageHost, storagePort, null,
-                        details.get(DiskTO.CHAP_INITIATOR_USERNAME), details.get(DiskTO.CHAP_INITIATOR_SECRET),
-                        details.get(DiskTO.CHAP_TARGET_USERNAME), details.get(DiskTO.CHAP_TARGET_SECRET),
-                        volumeTO.getSize(), cmd);
+                morDs = prepareManagedStorage(context, hyperHost, diskUuid, iScsiName, storageHost, storagePort, null,
+                            details.get(DiskTO.CHAP_INITIATOR_USERNAME), details.get(DiskTO.CHAP_INITIATOR_SECRET),
+                            details.get(DiskTO.CHAP_TARGET_USERNAME), details.get(DiskTO.CHAP_TARGET_SECRET),
+                            volumeTO.getSize(), cmd);
             }
             else {
-                morDs = HypervisorHostHelper.findDatastoreWithBackwardsCompatibility(hyperHost, isManaged ? VmwareResource.getDatastoreName(iScsiName) : primaryStore.getUuid());
+                if (storagePort == DEFAULT_NFS_PORT) {
+                    morDs = HypervisorHostHelper.findDatastoreWithBackwardsCompatibility(hyperHost, isManaged ? VmwareResource.getDatastoreName(diskUuid) : primaryStore.getUuid());
+                } else {
+                    morDs = HypervisorHostHelper.findDatastoreWithBackwardsCompatibility(hyperHost, isManaged ? VmwareResource.getDatastoreName(iScsiName) : primaryStore.getUuid());
+                }
             }
 
             if (morDs == null) {
-                String msg = "Unable to find the mounted datastore to execute AttachVolumeCommand, vmName: " + vmName;
+                String msg = "Unable to find the mounted datastore to execute AttachCommand, vmName: " + vmName;
                 s_logger.error(msg);
                 throw new Exception(msg);
             }
@@ -1357,9 +1366,9 @@ public class VmwareStorageProcessor implements StorageProcessor {
                 vmMo.detachDisk(datastoreVolumePath, false);
 
                 if (isManaged) {
-                    handleDatastoreAndVmdkDetach(iScsiName, storageHost, storagePort);
+                    handleDatastoreAndVmdkDetachManaged(diskUuid, iScsiName, storageHost, storagePort);
                 } else {
-                    VmwareStorageLayoutHelper.syncVolumeToRootFolder(dsMo.getOwnerDatacenter().first(), dsMo, volumeTO.getPath());
+                    VmwareStorageLayoutHelper.syncVolumeToRootFolder(dsMo.getOwnerDatacenter().first(), dsMo, volumeTO.getPath(), vmName);
                 }
             }
 
@@ -1381,7 +1390,13 @@ public class VmwareStorageProcessor implements StorageProcessor {
     }
 
     private static String getSecondaryDatastoreUUID(String storeUrl) {
-        return UUID.nameUUIDFromBytes(storeUrl.getBytes()).toString();
+        String uuid = null;
+        try{
+            uuid=UUID.nameUUIDFromBytes(storeUrl.getBytes("UTF-8")).toString();
+        }catch(UnsupportedEncodingException e){
+            s_logger.warn("Failed to create UUID from string " + storeUrl + ". Bad storeUrl or UTF-8 encoding error." );
+        }
+        return uuid;
     }
 
     public synchronized ManagedObjectReference prepareSecondaryDatastoreOnHost(String storeUrl) throws Exception {
@@ -1688,17 +1703,6 @@ public class VmwareStorageProcessor implements StorageProcessor {
                 if (s_logger.isInfoEnabled()) {
                     s_logger.info("Destroy root volume directly from datastore");
                 }
-            } else {
-                // evitTemplate will be converted into DestroyCommand, test if we are running in this case
-                VirtualMachineMO vmMo = clusterMo.findVmOnHyperHost(vol.getPath());
-                if (vmMo != null) {
-                    if (s_logger.isInfoEnabled()) {
-                        s_logger.info("Destroy template volume " + vol.getPath());
-                    }
-
-                    vmMo.destroy();
-                    return new Answer(cmd, true, "Success");
-                }
             }
 
             VmwareStorageLayoutHelper.deleteVolumeVmdkFiles(dsMo, vol.getPath(), new DatacenterMO(context, morDc));
@@ -1721,11 +1725,24 @@ public class VmwareStorageProcessor implements StorageProcessor {
         return getVmfsDatastore(context, hyperHost, datastoreName, storageHost, storagePort, trimIqn(iScsiName), null, null, null, null);
     }
 
-    private ManagedObjectReference prepareManagedDatastore(VmwareContext context, VmwareHypervisorHost hyperHost, String iScsiName,
-            String storageHost, int storagePort, String chapInitiatorUsername, String chapInitiatorSecret,
-            String chapTargetUsername, String chapTargetSecret) throws Exception {
-        return getVmfsDatastore(context, hyperHost, VmwareResource.getDatastoreName(iScsiName), storageHost, storagePort,
-                trimIqn(iScsiName), chapInitiatorUsername, chapInitiatorSecret, chapTargetUsername, chapTargetSecret);
+    private ManagedObjectReference prepareManagedDatastore(VmwareContext context, VmwareHypervisorHost hyperHost, String diskUuid, String iScsiName,
+                String storageHost, int storagePort, String chapInitiatorUsername, String chapInitiatorSecret,
+                String chapTargetUsername, String chapTargetSecret) throws Exception {
+        if (storagePort == DEFAULT_NFS_PORT) {
+            s_logger.info("creating the NFS datastore with the following configuration - storageHost: " + storageHost + ", storagePort: " + storagePort +
+                          ", exportpath: " + iScsiName + "and diskUuid : " + diskUuid);
+            ManagedObjectReference morCluster = hyperHost.getHyperHostCluster();
+            ClusterMO cluster = new ClusterMO(context, morCluster);
+            List<Pair<ManagedObjectReference, String>> lstHosts = cluster.getClusterHosts();
+
+            HostMO host = new HostMO(context, lstHosts.get(0).first());
+            HostDatastoreSystemMO hostDatastoreSystem = host.getHostDatastoreSystemMO();
+
+            return hostDatastoreSystem.createNfsDatastore(storageHost, storagePort, iScsiName, diskUuid);
+         } else {
+             return getVmfsDatastore(context, hyperHost, VmwareResource.getDatastoreName(iScsiName), storageHost, storagePort,
+                        trimIqn(iScsiName), chapInitiatorUsername, chapInitiatorSecret, chapTargetUsername, chapTargetSecret);
+         }
     }
 
     private ManagedObjectReference getVmfsDatastore(VmwareContext context, VmwareHypervisorHost hyperHost, String datastoreName, String storageIpAddress, int storagePortNumber,
@@ -2006,10 +2023,11 @@ public class VmwareStorageProcessor implements StorageProcessor {
         return tmp[1].trim();
     }
 
-    public ManagedObjectReference prepareManagedStorage(VmwareContext context, VmwareHypervisorHost hyperHost, String iScsiName,
+    public ManagedObjectReference prepareManagedStorage(VmwareContext context, VmwareHypervisorHost hyperHost, String diskUuid, String iScsiName,
             String storageHost, int storagePort, String volumeName, String chapInitiatorUsername, String chapInitiatorSecret,
             String chapTargetUsername, String chapTargetSecret, long size, Command cmd) throws Exception {
-        ManagedObjectReference morDs = prepareManagedDatastore(context, hyperHost, iScsiName, storageHost, storagePort,
+
+        ManagedObjectReference morDs = prepareManagedDatastore(context, hyperHost, diskUuid, iScsiName, storageHost, storagePort,
                 chapInitiatorUsername, chapInitiatorSecret, chapTargetUsername, chapTargetSecret);
 
         DatastoreMO dsMo = new DatastoreMO(hostService.getServiceContext(null), morDs);
@@ -2030,8 +2048,15 @@ public class VmwareStorageProcessor implements StorageProcessor {
         removeVmfsDatastore(hyperHost, datastoreName, storageHost, storagePort, trimIqn(iqn));
     }
 
-    private void handleDatastoreAndVmdkDetach(String iqn, String storageHost, int storagePort) throws Exception {
-        handleDatastoreAndVmdkDetach(VmwareResource.getDatastoreName(iqn), iqn, storageHost, storagePort);
+    private void handleDatastoreAndVmdkDetachManaged(String diskUuid, String iqn, String storageHost, int storagePort) throws Exception {
+        if (storagePort == DEFAULT_NFS_PORT) {
+            VmwareContext context = hostService.getServiceContext(null);
+            VmwareHypervisorHost hyperHost = hostService.getHyperHost(context, null);
+            // for managed NFS datastore
+            hyperHost.unmountDatastore(diskUuid);
+        } else {
+            handleDatastoreAndVmdkDetach(VmwareResource.getDatastoreName(iqn), iqn, storageHost, storagePort);
+        }
     }
 
     private void removeManagedTargetsFromCluster(List<String> iqns) throws Exception {
@@ -2241,7 +2266,14 @@ public class VmwareStorageProcessor implements StorageProcessor {
     }
 
     private static String deriveTemplateUuidOnHost(VmwareHypervisorHost hyperHost, String storeIdentifier, String templateName) {
-        String templateUuid = UUID.nameUUIDFromBytes((templateName + "@" + storeIdentifier + "-" + hyperHost.getMor().getValue()).getBytes()).toString();
+        String templateUuid;
+        try{
+            templateUuid = UUID.nameUUIDFromBytes((templateName + "@" + storeIdentifier + "-" + hyperHost.getMor().getValue()).getBytes("UTF-8")).toString();
+        }catch(UnsupportedEncodingException e){
+            s_logger.warn("unexpected encoding error, using default Charset: " + e.getLocalizedMessage());
+            templateUuid = UUID.nameUUIDFromBytes((templateName + "@" + storeIdentifier + "-" + hyperHost.getMor().getValue()).getBytes(Charset.defaultCharset()))
+                    .toString();
+        }
         templateUuid = templateUuid.replaceAll("-", "");
         return templateUuid;
     }

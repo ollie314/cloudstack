@@ -140,7 +140,7 @@ public class ProjectManagerImpl extends ManagerBase implements ProjectManager {
         _invitationRequired = Boolean.valueOf(configs.get(Config.ProjectInviteRequired.key()));
 
         String value = configs.get(Config.ProjectInvitationExpirationTime.key());
-        _invitationTimeOut = Long.valueOf(value != null ? value : "86400") * 1000;
+        _invitationTimeOut = Long.parseLong(value != null ? value : "86400") * 1000;
         _allowUserToCreateProject = Boolean.valueOf(configs.get(Config.AllowUserToCreateProject.key()));
 
         // set up the email system for project invitations
@@ -222,6 +222,7 @@ public class ProjectManagerImpl extends ManagerBase implements ProjectManager {
 
         if (project != null) {
             CallContext.current().setEventDetails("Project id=" + project.getId());
+            CallContext.current().putContextParameter(Project.class, project.getUuid());
         }
 
         //Increment resource count

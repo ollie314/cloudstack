@@ -7,7 +7,7 @@
 # with the License.  You may obtain a copy of the License at
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -82,12 +82,11 @@ Requires: mkisofs
 Requires: MySQL-python
 Requires: ipmitool
 Requires: %{name}-common = %{_ver}
-Requires: %{name}-awsapi = %{_ver}
 Requires: iptables-services
 Group:     System Environment/Libraries
 %description management
 The CloudStack management server is the central point of coordination,
-management, and intelligence in CloudStack.  
+management, and intelligence in CloudStack.
 
 %package common
 Summary: Apache CloudStack common files and scripts
@@ -108,9 +107,6 @@ Requires: iptables
 Requires: ethtool
 Requires: iproute
 Requires: ipset
-Requires: jsvc
-Requires: jakarta-commons-daemon
-Requires: jakarta-commons-daemon-jsvc
 Requires: perl
 Requires: libvirt-python
 Requires: qemu-img
@@ -135,9 +131,6 @@ The CloudStack baremetal agent
 %package usage
 Summary: CloudStack Usage calculation server
 Requires: java => 1.7.0
-Requires: jsvc
-Requires: jakarta-commons-daemon
-Requires: jakarta-commons-daemon-jsvc
 Requires: mysql-connector-java
 Group: System Environment/Libraries
 %description usage
@@ -150,13 +143,6 @@ Provides: python-marvin
 Group: System Environment/Libraries
 %description cli
 Apache CloudStack command line interface
-
-%package awsapi
-Summary: Apache CloudStack AWS API compatibility wrapper
-Requires: %{name}-management = %{_ver}
-Group: System Environment/Libraries
-%description awsapi
-Apache Cloudstack AWS API compatibility wrapper
 
 %if "%{_ossnoss}" == "noredist"
 %package mysql-ha
@@ -187,19 +173,18 @@ if [ "%{_ossnoss}" == "NOREDIST" -o "%{_ossnoss}" == "noredist" ] ; then
    FLAGS="$FLAGS -Dnoredist"
 fi
 
-if [ "%{_sim}" == "SIMULATOR" -o "%{_sim}" == "simulator" ] ; then 
+if [ "%{_sim}" == "SIMULATOR" -o "%{_sim}" == "simulator" ] ; then
    echo "Adding simulator flag to the maven build"
    FLAGS="$FLAGS -Dsimulator"
-fi 
+fi
 
-mvn -Pawsapi,systemvm -DskipTests $FLAGS clean package
+mvn -Psystemvm -DskipTests $FLAGS clean package
 
 %install
 [ ${RPM_BUILD_ROOT} != "/" ] && rm -rf ${RPM_BUILD_ROOT}
 # Common directories
 mkdir -p ${RPM_BUILD_ROOT}%{_bindir}
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/agent
-mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/awsapi
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/ipallocator
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/cache/%{name}/management/work
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/cache/%{name}/management/temp
@@ -207,6 +192,8 @@ mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/%{name}/mnt
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/%{name}/management
 mkdir -p ${RPM_BUILD_ROOT}%{_initrddir}
 mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig
+mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d
+mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/sudoers.d
 
 # Common
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-common/scripts
@@ -222,7 +209,7 @@ python -m py_compile ${RPM_BUILD_ROOT}%{python_sitearch}/cloud_utils.py
 python -m compileall ${RPM_BUILD_ROOT}%{python_sitearch}/cloudutils
 cp build/gitrev.txt ${RPM_BUILD_ROOT}%{_datadir}/%{name}-common/scripts
 cp packaging/centos7/cloudstack-sccs ${RPM_BUILD_ROOT}/usr/bin
- 
+
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-common/scripts/network/cisco
 cp -r plugins/network-elements/cisco-vnmc/scripts/network/cisco/* ${RPM_BUILD_ROOT}%{_datadir}/%{name}-common/scripts/network/cisco
 
@@ -231,7 +218,6 @@ mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-management/
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-management/webapps/client
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-management/setup
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/management
-mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/awsapi
 mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/run
 
@@ -263,8 +249,8 @@ cp -r client/target/cloud-client-ui-%{_maventag}/* ${RPM_BUILD_ROOT}%{_datadir}/
 rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-management/webapps/client/WEB-INF/classes/scripts
 rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-management/webapps/client/WEB-INF/classes/vms
 
-for name in catalina.properties db.properties log4j-cloud.xml web.xml cloud-bridge.properties\
-            ec2-service.properties server.xml commons-logging.properties environment.properties tomcat-users.xml
+for name in catalina.properties db.properties log4j-cloud.xml web.xml \
+            server.xml commons-logging.properties environment.properties java.security.ciphers tomcat-users.xml
 do
   cp packaging/centos7/tomcat7/$name \
     ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management/$name
@@ -281,11 +267,12 @@ install -D client/target/pythonlibs/jasypt-1.9.2.jar ${RPM_BUILD_ROOT}%{_datadir
 
 install -D packaging/centos7/cloud-ipallocator.rc ${RPM_BUILD_ROOT}%{_initrddir}/%{name}-ipallocator
 install -D packaging/centos7/cloud-management.sysconfig ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig/%{name}-management
+install -D server/target/conf/cloudstack-sudoers ${RPM_BUILD_ROOT}%{_sysconfdir}/sudoers.d/%{name}-management
 install -D packaging/centos7/cloud-management.service ${RPM_BUILD_ROOT}%{_unitdir}/%{name}-management.service
-install -D packaging/centos7/cloud-management.sudoers ${RPM_BUILD_ROOT}%{_sysconfdir}/sudoers.d/%{name}-management
 install -D packaging/centos7/cloud.limits ${RPM_BUILD_ROOT}%{_sysconfdir}/security/limits.d/cloud
 touch ${RPM_BUILD_ROOT}%{_localstatedir}/run/%{name}-management.pid
 
+chmod 440 ${RPM_BUILD_ROOT}%{_sysconfdir}/sudoers.d/%{name}-management
 chmod 770 ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management/Catalina
 chmod 770 ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management/Catalina/localhost
 chmod 770 ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management/Catalina/localhost/client
@@ -301,7 +288,7 @@ mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/agent
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/agent
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-agent/lib
 mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-agent/plugins
-install -D packaging/centos7/cloud-agent.rc ${RPM_BUILD_ROOT}%{_sysconfdir}/init.d/%{name}-agent
+install -D packaging/systemd/cloudstack-agent.service ${RPM_BUILD_ROOT}%{_unitdir}/%{name}-agent.service
 install -D agent/target/transformed/agent.properties ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/agent/agent.properties
 install -D agent/target/transformed/environment.properties ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/agent/environment.properties
 install -D agent/target/transformed/log4j-cloud.xml ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/agent/log4j-cloud.xml
@@ -309,6 +296,7 @@ install -D agent/target/transformed/cloud-setup-agent ${RPM_BUILD_ROOT}%{_bindir
 install -D agent/target/transformed/cloudstack-agent-upgrade ${RPM_BUILD_ROOT}%{_bindir}/%{name}-agent-upgrade
 install -D agent/target/transformed/libvirtqemuhook ${RPM_BUILD_ROOT}%{_datadir}/%{name}-agent/lib/libvirtqemuhook
 install -D agent/target/transformed/cloud-ssh ${RPM_BUILD_ROOT}%{_bindir}/%{name}-ssh
+install -D agent/target/transformed/cloudstack-agent-profile.sh ${RPM_BUILD_ROOT}%{_sysconfdir}/profile.d/%{name}-agent-profile.sh
 install -D plugins/hypervisors/kvm/target/cloud-plugin-hypervisor-kvm-%{_maventag}.jar ${RPM_BUILD_ROOT}%{_datadir}/%name-agent/lib/cloud-plugin-hypervisor-kvm-%{_maventag}.jar
 cp plugins/hypervisors/kvm/target/dependencies/*  ${RPM_BUILD_ROOT}%{_datadir}/%{name}-agent/lib
 
@@ -319,47 +307,18 @@ install -D usage/target/cloud-usage-%{_maventag}.jar ${RPM_BUILD_ROOT}%{_datadir
 install -D usage/target/transformed/db.properties ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/usage/db.properties
 install -D usage/target/transformed/log4j-cloud_usage.xml ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/usage/log4j-cloud.xml
 cp usage/target/dependencies/* ${RPM_BUILD_ROOT}%{_datadir}/%{name}-usage/lib/
-install -D packaging/centos7/cloud-usage.service ${RPM_BUILD_ROOT}%{_unitdir}/%{name}-usage.service
-install -D packaging/centos7/cloud-usage.sysconfig ${RPM_BUILD_ROOT}%{_sysconfdir}/sysconfig/%{name}-usage
-install -D packaging/centos7/cloud-usage-sysd ${RPM_BUILD_ROOT}/usr/sbin/%{name}-usage-sysd
-mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/run
-touch ${RPM_BUILD_ROOT}%{_localstatedir}/run/%{name}-usage.pid
+install -D packaging/systemd/cloudstack-usage.service ${RPM_BUILD_ROOT}%{_unitdir}/%{name}-usage.service
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/log/%{name}/usage/
 
 # CLI
 cp -r cloud-cli/cloudtool ${RPM_BUILD_ROOT}%{python_sitearch}/
 install cloud-cli/cloudapis/cloud.py ${RPM_BUILD_ROOT}%{python_sitearch}/cloudapis.py
 
-# AWS API
-mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi
-mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/setup
-cp -r awsapi/target/cloud-awsapi-%{_maventag}/* ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi
-install -D awsapi-setup/setup/cloud-setup-bridge ${RPM_BUILD_ROOT}%{_bindir}/cloudstack-setup-bridge
-install -D awsapi-setup/setup/cloudstack-aws-api-register ${RPM_BUILD_ROOT}%{_bindir}/cloudstack-aws-api-register
-cp -r awsapi-setup/db/mysql/* ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/setup
-cp awsapi/resource/Axis2/axis2.xml ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/conf
-cp awsapi/target/WEB-INF/services/cloud-ec2.aar ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/services
-
-
-for name in cloud-bridge.properties commons-logging.properties ec2-service.properties ; do
-  mv ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/$name \
-    ${RPM_BUILD_ROOT}%{_sysconfdir}/%{name}/management/$name
-done
-
 # MYSQL HA
 if [ "x%{_ossnoss}" == "xnoredist" ] ; then
   mkdir -p ${RPM_BUILD_ROOT}%{_datadir}/%{name}-mysql-ha/lib
   cp -r plugins/database/mysql-ha/target/cloud-plugin-database-mysqlha-%{_maventag}.jar ${RPM_BUILD_ROOT}%{_datadir}/%{name}-mysql-ha/lib
 fi
-
-#Don't package the below for AWS API
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/db.properties
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/LICENSE.txt
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/log4j.properties
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/log4j-vmops.xml
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/META-INF
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/NOTICE.txt
-rm -rf ${RPM_BUILD_ROOT}%{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/services.xml
 
 #License files from whisker
 install -D tools/whisker/NOTICE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-management-%{version}/NOTICE
@@ -370,8 +329,6 @@ install -D tools/whisker/NOTICE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-agent
 install -D tools/whisker/LICENSE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-agent-%{version}/LICENSE
 install -D tools/whisker/NOTICE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-usage-%{version}/NOTICE
 install -D tools/whisker/LICENSE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-usage-%{version}/LICENSE
-install -D tools/whisker/NOTICE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-awsapi-%{version}/NOTICE
-install -D tools/whisker/LICENSE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-awsapi-%{version}/LICENSE
 install -D tools/whisker/NOTICE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-cli-%{version}/NOTICE
 install -D tools/whisker/LICENSE ${RPM_BUILD_ROOT}%{_defaultdocdir}/%{name}-cli-%{version}/LICENSE
 if [ "x%{_ossnoss}" == "xnoredist" ] ; then
@@ -381,10 +338,6 @@ fi
 
 %clean
 [ ${RPM_BUILD_ROOT} != "/" ] && rm -rf ${RPM_BUILD_ROOT}
-
-%pre awsapi
-id cloud > /dev/null 2>&1 || /usr/sbin/useradd -M -c "CloudStack unprivileged user" \
-     -r -s /bin/sh -d %{_localstatedir}/cloudstack/management cloud|| true
 
 %preun management
 /usr/bin/systemctl stop cloudstack-management || true
@@ -401,12 +354,8 @@ if [ "$1" == "1" ] ; then
     /usr/bin/systemctl on cloudstack-management > /dev/null 2>&1 || true
 fi
 
-if [ -d "%{_datadir}/%{name}-management" ] ; then
-   ln -s %{_datadir}/%{name}-bridge/webapps %{_datadir}/%{name}-management/webapps7080
-fi
-
 if [ ! -f %{_datadir}/cloudstack-common/scripts/vm/hypervisor/xenserver/vhd-util ] ; then
-    echo Please download vhd-util from http://download.cloud.com.s3.amazonaws.com/tools/vhd-util and put it in 
+    echo Please download vhd-util from http://download.cloud.com.s3.amazonaws.com/tools/vhd-util and put it in
     echo %{_datadir}/cloudstack-common/scripts/vm/hypervisor/xenserver/
 fi
 
@@ -414,7 +363,6 @@ fi
 /sbin/service cloudstack-agent stop || true
 if [ "$1" == "0" ] ; then
     /sbin/chkconfig --del cloudstack-agent > /dev/null 2>&1 || true
-    /sbin/service cloudstack-agent stop > /dev/null 2>&1 || true
 fi
 
 %pre agent
@@ -434,8 +382,7 @@ if [ "$1" == "1" ] ; then
     fi
     cp -a ${RPM_BUILD_ROOT}%{_datadir}/%{name}-agent/lib/libvirtqemuhook %{_sysconfdir}/libvirt/hooks/qemu
     /sbin/service libvirtd restart
-    /sbin/chkconfig --add cloudstack-agent > /dev/null 2>&1 || true
-    /sbin/chkconfig --level 345 cloudstack-agent on > /dev/null 2>&1 || true
+    /sbin/systemctl enable cloudstack-agent > /dev/null 2>&1 || true
 fi
 
 # if saved configs from upgrade exist, copy them over
@@ -454,7 +401,6 @@ id cloud > /dev/null 2>&1 || /usr/sbin/useradd -M -c "CloudStack unprivileged us
 /sbin/service cloudstack-usage stop || true
 if [ "$1" == "0" ] ; then
     /sbin/chkconfig --del cloudstack-usage > /dev/null 2>&1 || true
-    /sbin/service cloudstack-usage stop > /dev/null 2>&1 || true
 fi
 
 %post usage
@@ -462,8 +408,7 @@ if [ -f "%{_sysconfdir}/%{name}/management/db.properties" ]; then
     echo Replacing db.properties with management server db.properties
     rm -f %{_sysconfdir}/%{name}/usage/db.properties
     ln -s %{_sysconfdir}/%{name}/management/db.properties %{_sysconfdir}/%{name}/usage/db.properties
-    /sbin/chkconfig --add cloudstack-usage > /dev/null 2>&1 || true
-    /sbin/chkconfig --level 345 cloudstack-usage on > /dev/null 2>&1 || true
+    /usr/bin/systemctl enable cloudstack-usage > /dev/null 2>&1 || true
 fi
 
 if [ -f "%{_sysconfdir}/%{name}/management/key" ]; then
@@ -471,11 +416,6 @@ if [ -f "%{_sysconfdir}/%{name}/management/key" ]; then
     rm -f %{_sysconfdir}/%{name}/usage/key
     ln -s %{_sysconfdir}/%{name}/management/key %{_sysconfdir}/%{name}/usage/key
 fi
-
-#%post awsapi
-#if [ -d "%{_datadir}/%{name}-management" ] ; then
-#   ln -s %{_datadir}/%{name}-bridge/webapps %{_datadir}/%{name}-management/webapps7080
-#fi
 
 #No default permission as the permission setup is complex
 %files management
@@ -490,8 +430,6 @@ fi
 %dir %attr(0770,root,cloud) %{_localstatedir}/cache/%{name}/management/work
 %dir %attr(0770,root,cloud) %{_localstatedir}/cache/%{name}/management/temp
 %dir %attr(0770,root,cloud) %{_localstatedir}/log/%{name}/management
-%dir %attr(0770,root,cloud) %{_localstatedir}/log/%{name}/agent
-%dir %attr(0770,root,cloud) %{_localstatedir}/log/%{name}/awsapi
 %config(noreplace) %{_sysconfdir}/sysconfig/%{name}-management
 %config(noreplace) %{_sysconfdir}/sudoers.d/%{name}-management
 %config(noreplace) %{_sysconfdir}/security/limits.d/cloud
@@ -503,9 +441,8 @@ fi
 %config(noreplace) %{_sysconfdir}/%{name}/management/web.xml
 %config(noreplace) %{_sysconfdir}/%{name}/management/server.xml
 %config(noreplace) %{_sysconfdir}/%{name}/management/environment.properties
-%config(noreplace) %{_sysconfdir}/%{name}/management/cloud-bridge.properties
+%config(noreplace) %{_sysconfdir}/%{name}/management/java.security.ciphers
 %config(noreplace) %{_sysconfdir}/%{name}/management/commons-logging.properties
-%config(noreplace) %{_sysconfdir}/%{name}/management/ec2-service.properties
 %attr(0755,root,root) %{_unitdir}/%{name}-management.service
 %attr(0755,cloud,cloud) %{_localstatedir}/run/%{name}-management.pid
 
@@ -539,7 +476,8 @@ fi
 %attr(0755,root,root) %{_bindir}/%{name}-setup-agent
 %attr(0755,root,root) %{_bindir}/%{name}-agent-upgrade
 %attr(0755,root,root) %{_bindir}/%{name}-ssh
-%attr(0755,root,root) %{_sysconfdir}/init.d/%{name}-agent
+%attr(0644,root,root) %{_unitdir}/%{name}-agent.service
+%attr(0644,root,root) %{_sysconfdir}/profile.d/%{name}-agent-profile.sh
 %attr(0755,root,root) %{_datadir}/%{name}-common/scripts/network/cisco
 %config(noreplace) %{_sysconfdir}/%{name}/agent
 %dir %{_localstatedir}/log/%{name}/agent
@@ -564,15 +502,12 @@ fi
 %{_defaultdocdir}/%{name}-common-%{version}/NOTICE
 
 %files usage
-%attr(0644,root,root) %{_sysconfdir}/sysconfig/%{name}-usage
-%attr(0755,root,root) /usr/sbin/%{name}-usage-sysd
 %attr(0644,root,root) %{_unitdir}/%{name}-usage.service
 %attr(0644,root,root) %{_datadir}/%{name}-usage/*.jar
 %attr(0644,root,root) %{_datadir}/%{name}-usage/lib/*.jar
 %dir %attr(0770,root,cloud) %{_localstatedir}/log/%{name}/usage
 %attr(0644,root,root) %{_sysconfdir}/%{name}/usage/db.properties
 %attr(0644,root,root) %{_sysconfdir}/%{name}/usage/log4j-cloud.xml
-%attr(0644,cloud,cloud) %{_localstatedir}/run/%{name}-usage.pid
 %{_defaultdocdir}/%{name}-usage-%{version}/LICENSE
 %{_defaultdocdir}/%{name}-usage-%{version}/NOTICE
 
@@ -582,18 +517,6 @@ fi
 %attr(0644,root,root) %{python_sitearch}/cloudtool/utils.py
 %{_defaultdocdir}/%{name}-cli-%{version}/LICENSE
 %{_defaultdocdir}/%{name}-cli-%{version}/NOTICE
-
-%files awsapi
-%defattr(0644,cloud,cloud,0755)
-%{_datadir}/%{name}-bridge/webapps/awsapi
-%attr(0644,root,root) %{_datadir}/%{name}-bridge/setup/*
-%attr(0755,root,root) %{_bindir}/cloudstack-aws-api-register
-%attr(0755,root,root) %{_bindir}/cloudstack-setup-bridge
-%attr(0666,cloud,cloud) %{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/crypto.properties
-%attr(0666,cloud,cloud) %{_datadir}/%{name}-bridge/webapps/awsapi/WEB-INF/classes/xes.keystore
-
-%{_defaultdocdir}/%{name}-awsapi-%{version}/LICENSE
-%{_defaultdocdir}/%{name}-awsapi-%{version}/NOTICE
 
 %if "%{_ossnoss}" == "noredist"
 %files mysql-ha
@@ -607,6 +530,9 @@ fi
 %attr(0755,root,root) %{_bindir}/cloudstack-setup-baremetal
 
 %changelog
+* Thu Apr 30 2015 Rohit Yadav <bhaisaab@apache.org> 4.6.0
+- Remove awsapi package
+
 * Wed Nov 19 2014 Hugo Trippaers <hugo@apache.org> 4.6.0
 - Create a specific spec for CentOS 7
 

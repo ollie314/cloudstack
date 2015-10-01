@@ -21,7 +21,7 @@ import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.URLEncoder;
@@ -243,6 +243,7 @@ public class VirtualMachineMO extends BaseMO {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
+                        s_logger.debug("[ignored] interupted while dealing with vm questions.");
                     }
                 }
                 s_logger.info("VM Question monitor stopped");
@@ -289,6 +290,7 @@ public class VirtualMachineMO extends BaseMO {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
+                        s_logger.debug("[ignored] interupted while powering of vm.");
                     }
                 }
 
@@ -321,6 +323,7 @@ public class VirtualMachineMO extends BaseMO {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
+                    s_logger.debug("[ignored] interupted while powering of vm unconditionaly.");
                 }
             }
             return true;
@@ -354,6 +357,7 @@ public class VirtualMachineMO extends BaseMO {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
+                    s_logger.debug("[ignored] interupted while pausing after power off.");
                 }
             } else {
                 break;
@@ -458,6 +462,7 @@ public class VirtualMachineMO extends BaseMO {
 
     public boolean createSnapshot(String snapshotName, String snapshotDescription, boolean dumpMemory, boolean quiesce) throws Exception {
 
+        long apiTimeout = _context.getVimClient().getVcenterSessionTimeout();
         ManagedObjectReference morTask = _context.getService().createSnapshotTask(_mor, snapshotName, snapshotDescription, dumpMemory, quiesce);
 
         boolean result = _context.getVimClient().waitForTask(morTask);
@@ -467,7 +472,7 @@ public class VirtualMachineMO extends BaseMO {
             ManagedObjectReference morSnapshot = null;
             // We still need to wait until the object appear in vCenter
             long startTick = System.currentTimeMillis();
-            while (System.currentTimeMillis() - startTick < 10000) {
+            while (System.currentTimeMillis() - startTick < apiTimeout) {
                 morSnapshot = getSnapshotMor(snapshotName);
                 if (morSnapshot != null) {
                     break;
@@ -476,12 +481,15 @@ public class VirtualMachineMO extends BaseMO {
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {
+                    s_logger.debug("[ignored] interupted while waiting for snapshot to be done.");
                 }
             }
 
-            if (morSnapshot == null)
-                s_logger.error("We've been waiting for over 10 seconds for snapshot MOR to be appearing in vCenter after CreateSnapshot task is done, but it is still not there?!");
-
+            if (morSnapshot == null) {
+                s_logger.error("We've been waiting for over " + apiTimeout + " milli seconds for snapshot MOR to be appearing in vCenter after CreateSnapshot task is done, but it is still not there?!");
+                return false;
+            }
+            s_logger.debug("Waited for " + (System.currentTimeMillis() - startTick) + " seconds for snapshot object [" + snapshotName + "] to appear in vCenter.");
             return true;
         } else {
             s_logger.error("VMware createSnapshot_Task failed due to " + TaskMO.getTaskFailureInfo(_context, morTask));
@@ -1155,7 +1163,7 @@ public class VirtualMachineMO extends BaseMO {
 
         // Note: if VM has been taken snapshot, original backing file will be renamed, therefore, when we try to find the matching
         // VirtualDisk, we only perform prefix matching
-        Pair<VirtualDisk, String> deviceInfo = getDiskDevice(vmdkDatastorePath, false);
+        Pair<VirtualDisk, String> deviceInfo = getDiskDevice(vmdkDatastorePath);
         if (deviceInfo == null) {
             s_logger.warn("vCenter API trace - detachDisk() done (failed)");
             throw new Exception("No such disk device: " + vmdkDatastorePath);
@@ -1402,6 +1410,7 @@ public class VirtualMachineMO extends BaseMO {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
+                        s_logger.debug("[ignored] interupted while handling vm question about iso detach.");
                     }
                 }
                 s_logger.info("VM Question monitor stopped");
@@ -1520,7 +1529,7 @@ public class VirtualMachineMO extends BaseMO {
                         String ovfPath = exportDir + File.separator + exportName + ".ovf";
                         fileNames.add(ovfPath);
 
-                        FileWriter out = new FileWriter(ovfPath);
+                        OutputStreamWriter out = new OutputStreamWriter(new FileOutputStream(ovfPath),"UTF-8");
                         out.write(ovfCreateDescriptorResult.getOvfDescriptor());
                         out.close();
 
@@ -1589,8 +1598,8 @@ public class VirtualMachineMO extends BaseMO {
 
         boolean replaced = false;
         try {
-            in = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(vmxContent)));
-            out = new BufferedWriter(new OutputStreamWriter(bos));
+            in = new BufferedReader(new InputStreamReader(new ByteArrayInputStream(vmxContent),"UTF-8"));
+            out = new BufferedWriter(new OutputStreamWriter(bos,"UTF-8"));
             String line;
             while ((line = in.readLine()) != null) {
                 if (line.startsWith("workingDir")) {
@@ -1751,8 +1760,15 @@ public class VirtualMachineMO extends BaseMO {
         }
     }
 
+  public String getGuestId() throws Exception {
+    return (String)_context.getVimClient().getDynamicProperty(_mor, "config.guestId");
+  }
+
     public GuestOsDescriptor getGuestOsDescriptor(String guestOsId) throws Exception {
         GuestOsDescriptor guestOsDescriptor = null;
+        if (guestOsId == null) {
+            guestOsId = getGuestId();
+        }
         ManagedObjectReference vmEnvironmentBrowser = _context.getVimClient().getMoRefProp(_mor, "environmentBrowser");
         VirtualMachineConfigOption vmConfigOption = _context.getService().queryConfigOption(vmEnvironmentBrowser, null, null);
         List<GuestOsDescriptor> guestDescriptors = vmConfigOption.getGuestOSDescriptor();
@@ -1918,6 +1934,20 @@ public class VirtualMachineMO extends BaseMO {
         throw new Exception("SCSI Controller Not Found");
     }
 
+    public int getGenericScsiDeviceControllerKeyNoException() throws Exception {
+        List<VirtualDevice> devices = _context.getVimClient().getDynamicProperty(_mor, "config.hardware.device");
+
+        if (devices != null && devices.size() > 0) {
+            for (VirtualDevice device : devices) {
+                if (device instanceof VirtualSCSIController) {
+                    return device.getKey();
+                }
+            }
+        }
+
+        return -1;
+    }
+
     public int getScsiDeviceControllerKeyNoException() throws Exception {
         List<VirtualDevice> devices = _context.getVimClient().getDynamicProperty(_mor, "config.hardware.device");
 
@@ -1954,18 +1984,15 @@ public class VirtualMachineMO extends BaseMO {
     }
 
     // return pair of VirtualDisk and disk device bus name(ide0:0, etc)
-    public Pair<VirtualDisk, String> getDiskDevice(String vmdkDatastorePath, boolean matchExactly) throws Exception {
+    public Pair<VirtualDisk, String> getDiskDevice(String vmdkDatastorePath) throws Exception {
         List<VirtualDevice> devices = _context.getVimClient().getDynamicProperty(_mor, "config.hardware.device");
+        ArrayList<Pair<VirtualDisk, String>> partialMatchingDiskDevices = new ArrayList<Pair<VirtualDisk, String>>();
 
         DatastoreFile dsSrcFile = new DatastoreFile(vmdkDatastorePath);
         String srcBaseName = dsSrcFile.getFileBaseName();
         String trimmedSrcBaseName = VmwareHelper.trimSnapshotDeltaPostfix(srcBaseName);
 
-        if (matchExactly) {
-            s_logger.info("Look for disk device info from volume : " + vmdkDatastorePath + " with base name: " + srcBaseName);
-        } else {
-            s_logger.info("Look for disk device info from volume : " + vmdkDatastorePath + " with trimmed base name: " + trimmedSrcBaseName);
-        }
+        s_logger.info("Look for disk device info for volume : " + vmdkDatastorePath + " with base name: " + srcBaseName);
 
         if (devices != null && devices.size() > 0) {
             for (VirtualDevice device : devices) {
@@ -1980,20 +2007,14 @@ public class VirtualMachineMO extends BaseMO {
 
                             DatastoreFile dsBackingFile = new DatastoreFile(diskBackingInfo.getFileName());
                             String backingBaseName = dsBackingFile.getFileBaseName();
-                            if (matchExactly) {
-                                if (backingBaseName.equalsIgnoreCase(srcBaseName)) {
-                                    String deviceNumbering = getDeviceBusName(devices, device);
-
-                                    s_logger.info("Disk backing : " + diskBackingInfo.getFileName() + " matches ==> " + deviceNumbering);
-                                    return new Pair<VirtualDisk, String>((VirtualDisk)device, deviceNumbering);
-                                }
-                            } else {
-                                if (backingBaseName.contains(trimmedSrcBaseName)) {
-                                    String deviceNumbering = getDeviceBusName(devices, device);
-
-                                    s_logger.info("Disk backing : " + diskBackingInfo.getFileName() + " matches ==> " + deviceNumbering);
-                                    return new Pair<VirtualDisk, String>((VirtualDisk)device, deviceNumbering);
-                                }
+                            if (backingBaseName.equalsIgnoreCase(srcBaseName)) {
+                                String deviceNumbering = getDeviceBusName(devices, device);
+                                s_logger.info("Disk backing : " + diskBackingInfo.getFileName() + " matches ==> " + deviceNumbering);
+                                return new Pair<VirtualDisk, String>((VirtualDisk)device, deviceNumbering);
+                            }
+                            if (backingBaseName.contains(trimmedSrcBaseName)) {
+                                String deviceNumbering = getDeviceBusName(devices, device);
+                                partialMatchingDiskDevices.add(new Pair<VirtualDisk, String>((VirtualDisk)device, deviceNumbering));
                             }
 
                             diskBackingInfo = diskBackingInfo.getParent();
@@ -2003,6 +2024,21 @@ public class VirtualMachineMO extends BaseMO {
             }
         }
 
+        // No disk device was found with an exact match for the volume path, hence look for disk device that matches the trimmed name.
+        s_logger.info("No disk device with an exact match found for volume : " + vmdkDatastorePath + ". Look for disk device info against trimmed base name: " + srcBaseName);
+        if (partialMatchingDiskDevices != null) {
+            if (partialMatchingDiskDevices.size() == 1) {
+                VirtualDiskFlatVer2BackingInfo matchingDiskBackingInfo = (VirtualDiskFlatVer2BackingInfo)partialMatchingDiskDevices.get(0).first().getBacking();
+                s_logger.info("Disk backing : " + matchingDiskBackingInfo.getFileName() + " matches ==> " + partialMatchingDiskDevices.get(0).second());
+                return partialMatchingDiskDevices.get(0);
+            } else if (partialMatchingDiskDevices.size() > 1) {
+                s_logger.warn("Disk device info lookup for volume: " + vmdkDatastorePath + " failed as multiple disk devices were found to match" +
+                        " volume's trimmed base name: " + trimmedSrcBaseName);
+                return null;
+            }
+        }
+
+        s_logger.warn("Disk device info lookup for volume: " + vmdkDatastorePath + " failed as no matching disk device found");
         return null;
     }
 
@@ -2068,6 +2104,26 @@ public class VirtualMachineMO extends BaseMO {
 
         return builder;
     }
+
+    public List<Pair<Integer, ManagedObjectReference>> getAllDiskDatastores() throws Exception {
+        List<Pair<Integer, ManagedObjectReference>> disks = new ArrayList<Pair<Integer, ManagedObjectReference>>();
+
+        List<VirtualDevice> devices = _context.getVimClient().getDynamicProperty(_mor, "config.hardware.device");
+        if (devices != null && devices.size() > 0) {
+            for (VirtualDevice device : devices) {
+                if (device instanceof VirtualDisk) {
+                    VirtualDeviceBackingInfo backingInfo = ((VirtualDisk)device).getBacking();
+                    if (backingInfo instanceof VirtualDiskFlatVer2BackingInfo) {
+                        VirtualDiskFlatVer2BackingInfo diskBackingInfo = (VirtualDiskFlatVer2BackingInfo)backingInfo;
+                        disks.add(new Pair<Integer, ManagedObjectReference>(new Integer(device.getKey()), diskBackingInfo.getDatastore()));
+                    }
+                }
+            }
+        }
+
+        return disks;
+    }
+
 
     @Deprecated
     public List<Pair<String, ManagedObjectReference>> getDiskDatastorePathChain(VirtualDisk disk, boolean followChain) throws Exception {
@@ -2347,7 +2403,7 @@ public class VirtualMachineMO extends BaseMO {
 
         List<Integer> existingUnitNumbers = new ArrayList<Integer>();
         int deviceNumber = 0;
-        int scsiControllerKey = getScsiDeviceControllerKeyNoException();
+        int scsiControllerKey = getGenericScsiDeviceControllerKeyNoException();
         if (devices != null && devices.size() > 0) {
             for (VirtualDevice device : devices) {
                 if (device.getControllerKey() != null && device.getControllerKey().intValue() == controllerKey) {
@@ -2536,6 +2592,7 @@ public class VirtualMachineMO extends BaseMO {
                     try {
                         Thread.sleep(1000);
                     } catch (InterruptedException e) {
+                        s_logger.debug("[ignored] interupted while handling vm question about umount tools install.");
                     }
                 }
 

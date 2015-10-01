@@ -35,6 +35,7 @@ import com.cloud.offering.ServiceOffering;
 import com.cloud.resource.ResourceManager;
 import com.cloud.server.ConfigurationServer;
 import com.cloud.service.ServiceOfferingDetailsVO;
+import com.cloud.service.dao.ServiceOfferingDao;
 import com.cloud.service.dao.ServiceOfferingDetailsDao;
 import com.cloud.storage.dao.VMTemplateDetailsDao;
 import com.cloud.utils.Pair;
@@ -71,6 +72,8 @@ public abstract class HypervisorGuruBase extends AdapterBase implements Hypervis
     ResourceManager _resourceMgr;
     @Inject
     ServiceOfferingDetailsDao _serviceOfferingDetailsDao;
+    @Inject
+    ServiceOfferingDao _serviceOfferingDao;
 
     protected HypervisorGuruBase() {
         super();
@@ -82,12 +85,12 @@ public abstract class HypervisorGuruBase extends AdapterBase implements Hypervis
         to.setDeviceId(profile.getDeviceId());
         to.setBroadcastType(profile.getBroadcastType());
         to.setType(profile.getTrafficType());
-        to.setIp(profile.getIp4Address());
-        to.setNetmask(profile.getNetmask());
+        to.setIp(profile.getIPv4Address());
+        to.setNetmask(profile.getIPv4Netmask());
         to.setMac(profile.getMacAddress());
-        to.setDns1(profile.getDns1());
-        to.setDns2(profile.getDns2());
-        to.setGateway(profile.getGateway());
+        to.setDns1(profile.getIPv4Dns1());
+        to.setDns2(profile.getIPv4Dns2());
+        to.setGateway(profile.getIPv4Gateway());
         to.setDefaultNic(profile.isDefaultNic());
         to.setBroadcastUri(profile.getBroadCastUri());
         to.setIsolationuri(profile.getIsolationUri());
@@ -125,8 +128,7 @@ public abstract class HypervisorGuruBase extends AdapterBase implements Hypervis
     }
 
     protected VirtualMachineTO toVirtualMachineTO(VirtualMachineProfile vmProfile) {
-
-        ServiceOffering offering = vmProfile.getServiceOffering();
+        ServiceOffering offering = _serviceOfferingDao.findById(vmProfile.getId(), vmProfile.getServiceOfferingId());
         VirtualMachine vm = vmProfile.getVirtualMachine();
         Long minMemory = (long)(offering.getRamSize() / vmProfile.getMemoryOvercommitRatio());
         int minspeed = (int)(offering.getSpeed() / vmProfile.getCpuOvercommitRatio());
@@ -171,7 +173,11 @@ public abstract class HypervisorGuruBase extends AdapterBase implements Hypervis
         to.setEnableDynamicallyScaleVm(isDynamicallyScalable);
         to.setUuid(vmInstance.getUuid());
 
-        //
+        to.setVmData(vmProfile.getVmData());
+        to.setConfigDriveLabel(vmProfile.getConfigDriveLabel());
+        to.setConfigDriveIsoRootFolder(vmProfile.getConfigDriveIsoRootFolder());
+        to.setConfigDriveIsoFile(vmProfile.getConfigDriveIsoFile());
+
         return to;
     }
 

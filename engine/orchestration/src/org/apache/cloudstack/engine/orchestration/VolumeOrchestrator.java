@@ -482,8 +482,8 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
     @DB
     public VolumeInfo createVolume(VolumeInfo volume, VirtualMachine vm, VirtualMachineTemplate template, DataCenter dc, Pod pod, Long clusterId, ServiceOffering offering,
             DiskOffering diskOffering, List<StoragePool> avoids, long size, HypervisorType hyperType) {
-        // update the volume's hypervisor_ss_reserve from its disk offering (used for managed storage)
-        volume = updateHypervisorSnapshotReserveForVolume(diskOffering, volume, hyperType);
+        // update the volume's hv_ss_reserve (hypervisor snapshot reserve) from a disk offering (used for managed storage)
+        volume = volService.updateHypervisorSnapshotReserveForVolume(diskOffering, volume.getId(), hyperType);
 
         StoragePool pool = null;
 
@@ -546,29 +546,6 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
         throw new CloudRuntimeException("create volume failed even after template re-deploy");
     }
 
-    // For managed storage on Xen and VMware, we need to potentially make space for hypervisor snapshots.
-    // The disk offering can collect this information and pass it on to the volume that's about to be created.
-    // Ex. if you want a 10 GB CloudStack volume to reside on managed storage on Xen, this leads to an SR
-    // that is a total size of (10 GB * (hypervisorSnapshotReserveSpace / 100) + 10 GB).
-    @Override
-    public VolumeInfo updateHypervisorSnapshotReserveForVolume(DiskOffering diskOffering, VolumeInfo volumeInfo, HypervisorType hyperType) {
-        Integer hypervisorSnapshotReserve = diskOffering.getHypervisorSnapshotReserve();
-
-        if (hyperType == HypervisorType.KVM) {
-            hypervisorSnapshotReserve = null;
-        } else if (hypervisorSnapshotReserve == null || hypervisorSnapshotReserve < 0) {
-            hypervisorSnapshotReserve = 0;
-        }
-
-        VolumeVO volume = _volsDao.findById(volumeInfo.getId());
-
-        volume.setHypervisorSnapshotReserve(hypervisorSnapshotReserve);
-
-        _volsDao.update(volume.getId(), volume);
-
-        return volFactory.getVolume(volume.getId());
-    }
-
     public String getRandomVolumeName() {
         return UUID.randomUUID().toString();
     }
@@ -622,9 +599,9 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
     @Override
     public boolean validateVolumeSizeRange(long size) {
         if (size < 0 || (size > 0 && size < (1024 * 1024 * 1024))) {
-            throw new InvalidParameterValueException("Please specify a size of at least 1 Gb.");
+            throw new InvalidParameterValueException("Please specify a size of at least 1 GB.");
         } else if (size > (MaxVolumeSize.value() * 1024 * 1024 * 1024)) {
-            throw new InvalidParameterValueException("volume size " + size + ", but the maximum size allowed is " + MaxVolumeSize + " Gb.");
+            throw new InvalidParameterValueException("volume size " + size + ", but the maximum size allowed is " + MaxVolumeSize + " GB.");
         }
 
         return true;
@@ -697,10 +674,10 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
         if (rootDisksize != null ) {
             rootDisksize = rootDisksize * 1024 * 1024 * 1024;
             if (rootDisksize > size) {
-                s_logger.debug("Using root disk size of " + rootDisksize + " for volume " + name);
+                s_logger.debug("Using root disk size of " + rootDisksize + " Bytes for volume " + name);
                 size = rootDisksize;
             } else {
-                s_logger.debug("Using root disk size of " + size + " for volume " + name + "since specified root disk size of " + rootDisksize + " is smaller than template");
+                s_logger.debug("Using root disk size of " + size + " Bytes for volume " + name + "since specified root disk size of " + rootDisksize + " Bytes is smaller than template");
             }
         }
 
@@ -1258,8 +1235,8 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
                 DiskOffering diskOffering = _entityMgr.findById(DiskOffering.class, volume.getDiskOfferingId());
                 HypervisorType hyperType = vm.getVirtualMachine().getHypervisorType();
 
-                // update the volume's hypervisor_ss_reserve from its disk offering (used for managed storage)
-                updateHypervisorSnapshotReserveForVolume(diskOffering, volume, hyperType);
+                // update the volume's hv_ss_reserve (hypervisor snapshot reserve) from a disk offering (used for managed storage)
+                volService.updateHypervisorSnapshotReserveForVolume(diskOffering, volume.getId(), hyperType);
 
                 volume = volFactory.getVolume(newVol.getId(), destPool);
 
@@ -1278,8 +1255,8 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
                     DiskOffering diskOffering = _entityMgr.findById(DiskOffering.class, volume.getDiskOfferingId());
                     HypervisorType hyperType = vm.getVirtualMachine().getHypervisorType();
 
-                    // update the volume's hypervisor_ss_reserve from its disk offering (used for managed storage)
-                    updateHypervisorSnapshotReserveForVolume(diskOffering, volume, hyperType);
+                    // update the volume's hv_ss_reserve (hypervisor snapshot reserve) from a disk offering (used for managed storage)
+                    volService.updateHypervisorSnapshotReserveForVolume(diskOffering, volume.getId(), hyperType);
 
                     long hostId = vm.getVirtualMachine().getHostId();
 
@@ -1401,7 +1378,7 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
 
     @Override
     public ConfigKey<?>[] getConfigKeys() {
-        return new ConfigKey<?>[] {RecreatableSystemVmEnabled, MaxVolumeSize, StorageHAMigrationEnabled, CustomDiskOfferingMaxSize, CustomDiskOfferingMinSize};
+        return new ConfigKey<?>[] {RecreatableSystemVmEnabled, MaxVolumeSize, StorageHAMigrationEnabled, StorageMigrationEnabled, CustomDiskOfferingMaxSize, CustomDiskOfferingMinSize};
     }
 
     @Override
@@ -1503,6 +1480,8 @@ public class VolumeOrchestrator extends ManagerBase implements VolumeOrchestrati
             }
             // FIXME - All this is boiler plate code and should be done as part of state transition. This shouldn't be part of orchestrator.
             // publish usage event for the volume
+            UsageEventUtils.publishUsageEvent(EventTypes.EVENT_VOLUME_DELETE, volume.getAccountId(), volume.getDataCenterId(), volume.getId(), volume.getName(),
+                    Volume.class.getName(), volume.getUuid(), volume.isDisplayVolume());
             _resourceLimitMgr.decrementResourceCount(volume.getAccountId(), ResourceType.volume, volume.isDisplay());
             //FIXME - why recalculate and not decrement
             _resourceLimitMgr.recalculateResourceCount(volume.getAccountId(), volume.getDomainId(), ResourceType.primary_storage.getOrdinal());

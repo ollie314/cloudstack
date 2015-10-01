@@ -30,6 +30,7 @@
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
         <title></title>
+        <link rel="shortcut icon" href="images/cloud.ico" />
         <link type="text/css" rel="stylesheet" href="lib/reset.css"/>
         <link type="text/css" rel="stylesheet" href="css/cloudstack3.css" />
         <link type="text/css" rel="stylesheet" href="css/token-input-facebook.css" />
@@ -39,6 +40,7 @@
         <!--[if IE 7]>
             <link type="text/css" rel="stylesheet" href="css/cloudstack3-ie7.css" />
             <![endif]-->
+	<link type="text/css" rel="stylesheet" href="css/custom.css" />
     </head>
     <body>
         <!-- CloudStack widget content -->
@@ -50,27 +52,38 @@
                 <form>
                     <div class="logo"></div>
                     <div class="fields">
-                        <!-- User name -->
-                        <div class="field username">
-                            <label for="username"><fmt:message key="label.username"/></label>
-                            <input type="text" name="username" class="required" />
+                        <div id="login-dropdown">
+                            <select id="login-options" style="width: 260px">
+                                <option value="cloudstack-login">Local <fmt:message key="label.login"/></option>
+                            </select>
                         </div>
-                        <!-- Password -->
-                        <div class="field password">
-                            <label for="password"><fmt:message key="label.password"/></label>
-                            <input type="password" name="password" class="required" autocomplete="off" />
+
+                        <div id="cloudstack-login">
+                            <!-- User name -->
+                            <div class="field username">
+                                <label for="username"><fmt:message key="label.username"/></label>
+                                <input type="text" name="username" class="required" />
+                            </div>
+                            <!-- Password -->
+                            <div class="field password">
+                                <label for="password"><fmt:message key="label.password"/></label>
+                                <input type="password" name="password" class="required" autocomplete="off" />
+                            </div>
+                            <!-- Domain -->
+                            <div class="field domain">
+                                <label for="domain"><fmt:message key="label.domain"/></label>
+                                <input type="text" name="domain" />
+                            </div>
                         </div>
-                        <!-- Domain -->
-                        <div class="field domain">
-                            <label for="domain"><fmt:message key="label.domain"/></label>
-                            <input type="text" name="domain" />
+
+                        <div id="login-submit">
+                            <!-- Submit (login) -->
+                            <input id="login-submit" type="submit" value="<fmt:message key="label.login"/>" />
                         </div>
-                        <!-- Submit (login) -->
-                        <input type="submit" value="<fmt:message key="label.login"/>" />
                         <!-- Select language -->
                         <div class="select-language">
                             <select name="language">
-                                <option value=""></option> <!-- when this blank option is selected, browser's default language will be used -->
+                                <option value=""></option> <!-- when this blank option is selected, default language of the browser will be used -->
                                 <option value="en"><fmt:message key="label.lang.english"/></option>
                                 <option value="ja_JP"><fmt:message key="label.lang.japanese"/></option>
                                 <option value="zh_CN"><fmt:message key="label.lang.chinese"/></option>
@@ -86,6 +99,7 @@
                                 <option value="ar"><fmt:message key="label.lang.arabic"/></option>
                                 <option value="nl_NL"><fmt:message key="label.lang.dutch"/></option>
                                 <option value="pl"><fmt:message key="label.lang.polish"/></option>
+                                <option value="hu"><fmt:message key="label.lang.hungarian"/></option>
                             </select>
                         </div>
                     </div>
@@ -560,7 +574,7 @@
                                     <!-- SSH Key Pairs -->
                                     <div class="select">
                                         <div class="name">
-                                            <span>SSH Key Pairs</span>
+                                            <span><fmt:message key="label.ssh.key.pairs"/></span>
                                         </div>
                                         <div class="value">
                                             <span wizard-field="sshkey-pairs"></span>
@@ -1759,73 +1773,74 @@
         <!-- jquery.tokeninput.js -->
         <script src="lib/jquery.tokeninput.js" type="text/javascript"></script>
         <!-- CloudStack -->
-        <script type="text/javascript" src="scripts/ui/core.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/utils.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/events.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/dialog.js?t=<%=now%>"></script>
+        <script type="text/javascript" src="scripts/ui/core.js"></script>
+        <script type="text/javascript" src="scripts/ui/utils.js"></script>
+        <script type="text/javascript" src="scripts/ui/events.js"></script>
+        <script type="text/javascript" src="scripts/ui/dialog.js"></script>
 
-        <script type="text/javascript" src="scripts/ui/widgets/multiEdit.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/overlay.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/dataTable.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/cloudBrowser.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/listView.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/detailView.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/treeView.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/notifications.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/tagger.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui/widgets/toolTip.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/cloud.core.callbacks.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/sharedFunctions.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/login.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/projects.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/cloudStack.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/lbStickyPolicy.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/autoscaler.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/healthCheck.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/autoscaler.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/granularSettings.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/zoneChart.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/dashboard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/installWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/installWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/projects.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/dashboard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/instanceWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/instanceWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/affinity.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/affinity.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/instances.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/events.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/regions.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/regions.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/ipRules.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/enableStaticNAT.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/securityRules.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/vpc.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/vpc.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/network.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/recurringSnapshots.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/uploadVolume.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/storage.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/templates.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/accountsWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/accountsWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/accounts.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/configuration.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/globalSettings.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/zoneWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/physicalResources.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/zoneWizard.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/system.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/domains.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/docs.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/vm_snapshots.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/ui-custom/projectSelect.js?t=<%=now%>"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/multiEdit.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/overlay.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/dataTable.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/cloudBrowser.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/listView.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/detailView.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/treeView.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/notifications.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/tagger.js"></script>
+        <script type="text/javascript" src="scripts/ui/widgets/toolTip.js"></script>
+        <script type="text/javascript" src="scripts/cloud.core.callbacks.js"></script>
+        <script type="text/javascript" src="scripts/sharedFunctions.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/login.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/projects.js"></script>
+        <script type="text/javascript" src="scripts/cloudStack.js"></script>
+        <script type="text/javascript" src="scripts/lbStickyPolicy.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/autoscaler.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/healthCheck.js"></script>
+        <script type="text/javascript" src="scripts/autoscaler.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/granularSettings.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/zoneChart.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/dashboard.js"></script>
+        <script type="text/javascript" src="scripts/installWizard.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/installWizard.js"></script>
+        <script type="text/javascript" src="scripts/projects.js"></script>
+        <script type="text/javascript" src="scripts/dashboard.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/instanceWizard.js"></script>
+        <script type="text/javascript" src="scripts/instanceWizard.js"></script>
+        <script type="text/javascript" src="scripts/affinity.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/affinity.js"></script>
+        <script type="text/javascript" src="scripts/instances.js"></script>
+        <script type="text/javascript" src="scripts/events.js"></script>
+        <script type="text/javascript" src="scripts/regions.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/regions.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/ipRules.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/enableStaticNAT.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/securityRules.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/vpc.js"></script>
+        <script type="text/javascript" src="scripts/vpc.js"></script>
+        <script type="text/javascript" src="scripts/network.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/recurringSnapshots.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/uploadVolume.js"></script>
+        <script type="text/javascript" src="scripts/storage.js"></script>
+        <script type="text/javascript" src="scripts/templates.js"></script>
+        <script type="text/javascript" src="scripts/accountsWizard.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/accountsWizard.js"></script>
+        <script type="text/javascript" src="scripts/accounts.js"></script>
+        <script type="text/javascript" src="scripts/configuration.js"></script>
+        <script type="text/javascript" src="scripts/globalSettings.js"></script>
+        <script type="text/javascript" src="scripts/zoneWizard.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/physicalResources.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/zoneWizard.js"></script>
+        <script type="text/javascript" src="scripts/system.js"></script>
+        <script type="text/javascript" src="scripts/domains.js"></script>
+        <script type="text/javascript" src="scripts/docs.js"></script>
+        <script type="text/javascript" src="scripts/vm_snapshots.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/projectSelect.js"></script>
+        <script type="text/javascript" src="scripts/ui-custom/saml.js"></script>
 
         <!-- Plugin/module API -->
-        <script type="text/javascript" src="scripts/ui-custom/pluginListing.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="plugins/plugins.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="modules/modules.js?t=<%=now%>"></script>
-        <script type="text/javascript" src="scripts/plugins.js?t=<%=now%>"></script>
+        <script type="text/javascript" src="scripts/ui-custom/pluginListing.js"></script>
+        <script type="text/javascript" src="plugins/plugins.js"></script>
+        <script type="text/javascript" src="modules/modules.js"></script>
+        <script type="text/javascript" src="scripts/plugins.js"></script>
     </body>
 </html>

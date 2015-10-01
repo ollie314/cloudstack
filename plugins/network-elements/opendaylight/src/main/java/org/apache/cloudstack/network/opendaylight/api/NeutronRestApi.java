@@ -20,6 +20,24 @@
 package org.apache.cloudstack.network.opendaylight.api;
 
 import org.apache.cloudstack.utils.security.SSLUtils;
+import org.apache.cloudstack.utils.security.SecureSSLSocketFactory;
+import org.apache.commons.httpclient.ConnectTimeoutException;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.HttpMethodBase;
+import org.apache.commons.httpclient.MultiThreadedHttpConnectionManager;
+import org.apache.commons.httpclient.cookie.CookiePolicy;
+import org.apache.commons.httpclient.params.HttpConnectionParams;
+import org.apache.commons.httpclient.protocol.Protocol;
+import org.apache.commons.httpclient.protocol.ProtocolSocketFactory;
+import org.apache.commons.httpclient.protocol.SecureProtocolSocketFactory;
+import org.apache.log4j.Logger;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -32,24 +50,6 @@ import java.net.UnknownHostException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-
-import org.apache.commons.httpclient.ConnectTimeoutException;
-import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.HttpException;
-import org.apache.commons.httpclient.HttpMethodBase;
-import org.apache.commons.httpclient.MultiThreadedHttpConnectionManager;
-import org.apache.commons.httpclient.cookie.CookiePolicy;
-import org.apache.commons.httpclient.params.HttpConnectionParams;
-import org.apache.commons.httpclient.protocol.Protocol;
-import org.apache.commons.httpclient.protocol.ProtocolSocketFactory;
-import org.apache.commons.httpclient.protocol.SecureProtocolSocketFactory;
-import org.apache.log4j.Logger;
 
 public class NeutronRestApi {
 
@@ -179,7 +179,7 @@ public class NeutronRestApi {
                 // Install the all-trusting trust manager
                 SSLContext sc = SSLUtils.getSSLContext();
                 sc.init(null, trustAllCerts, new java.security.SecureRandom());
-                ssf = sc.getSocketFactory();
+                ssf = new SecureSSLSocketFactory(sc);
             } catch (KeyManagementException e) {
                 throw new IOException(e);
             } catch (NoSuchAlgorithmException e) {
@@ -189,22 +189,28 @@ public class NeutronRestApi {
 
         @Override
         public Socket createSocket(final String host, final int port) throws IOException {
-            SSLSocket s = (SSLSocket) ssf.createSocket(host, port);
-            s.setEnabledProtocols(SSLUtils.getSupportedProtocols(s.getEnabledProtocols()));
+            Socket s = ssf.createSocket(host, port);
+            if (s instanceof SSLSocket) {
+                ((SSLSocket)s).setEnabledProtocols(SSLUtils.getSupportedProtocols(((SSLSocket)s).getEnabledProtocols()));
+            }
             return s;
         }
 
         @Override
         public Socket createSocket(final String address, final int port, final InetAddress localAddress, final int localPort) throws IOException, UnknownHostException {
-            SSLSocket s = (SSLSocket) ssf.createSocket(address, port, localAddress, localPort);
-            s.setEnabledProtocols(SSLUtils.getSupportedProtocols(s.getEnabledProtocols()));
+            Socket s = ssf.createSocket(address, port, localAddress, localPort);
+            if (s instanceof SSLSocket) {
+                ((SSLSocket)s).setEnabledProtocols(SSLUtils.getSupportedProtocols(((SSLSocket)s).getEnabledProtocols()));
+            }
             return s;
         }
 
         @Override
         public Socket createSocket(final Socket socket, final String host, final int port, final boolean autoClose) throws IOException, UnknownHostException {
-            SSLSocket s = (SSLSocket) ssf.createSocket(socket, host, port, autoClose);
-            s.setEnabledProtocols(SSLUtils.getSupportedProtocols(s.getEnabledProtocols()));
+            Socket s = ssf.createSocket(socket, host, port, autoClose);
+            if (s instanceof SSLSocket) {
+                ((SSLSocket)s).setEnabledProtocols(SSLUtils.getSupportedProtocols(((SSLSocket)s).getEnabledProtocols()));
+            }
             return s;
         }
 
@@ -213,10 +219,16 @@ public class NeutronRestApi {
                 UnknownHostException, ConnectTimeoutException {
             int timeout = params.getConnectionTimeout();
             if (timeout == 0) {
-                return createSocket(host, port, localAddress, localPort);
+                Socket s = createSocket(host, port, localAddress, localPort);
+                if (s instanceof SSLSocket) {
+                    ((SSLSocket)s).setEnabledProtocols(SSLUtils.getSupportedProtocols(((SSLSocket)s).getEnabledProtocols()));
+                }
+                return s;
             } else {
-                SSLSocket s = (SSLSocket) ssf.createSocket();
-                s.setEnabledProtocols(SSLUtils.getSupportedProtocols(s.getEnabledProtocols()));
+                Socket s = ssf.createSocket();
+                if (s instanceof SSLSocket) {
+                    ((SSLSocket)s).setEnabledProtocols(SSLUtils.getSupportedProtocols(((SSLSocket)s).getEnabledProtocols()));
+                }
                 s.bind(new InetSocketAddress(localAddress, localPort));
                 s.connect(new InetSocketAddress(host, port), timeout);
                 return s;

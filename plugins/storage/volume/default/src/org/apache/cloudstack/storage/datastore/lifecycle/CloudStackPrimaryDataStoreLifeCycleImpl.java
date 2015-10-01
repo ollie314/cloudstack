@@ -18,14 +18,18 @@
  */
 package org.apache.cloudstack.storage.datastore.lifecycle;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import javax.inject.Inject;
+
+import org.apache.log4j.Logger;
 
 import org.apache.cloudstack.engine.subsystem.api.storage.ClusterScope;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStore;
@@ -38,7 +42,6 @@ import org.apache.cloudstack.engine.subsystem.api.storage.ZoneScope;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.volume.datastore.PrimaryDataStoreHelper;
-import org.apache.log4j.Logger;
 
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.Answer;
@@ -47,6 +50,7 @@ import com.cloud.agent.api.DeleteStoragePoolCommand;
 import com.cloud.agent.api.StoragePoolInfo;
 import com.cloud.alert.AlertManager;
 import com.cloud.exception.InvalidParameterValueException;
+import com.cloud.exception.StorageConflictException;
 import com.cloud.host.Host;
 import com.cloud.host.HostVO;
 import com.cloud.host.dao.HostDao;
@@ -182,7 +186,15 @@ public class CloudStackPrimaryDataStoreLifeCycleImpl implements PrimaryDataStore
 
         String scheme = uri.getScheme();
         String storageHost = uri.getHost();
-        String hostPath = uri.getPath();
+        String hostPath = null;
+        try {
+          hostPath = URLDecoder.decode(uri.getPath(), "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            s_logger.error("[ignored] we are on a platform not supporting \"UTF-8\"!?!", e);
+        }
+        if (hostPath == null) { // if decoding fails, use getPath() anyway
+            hostPath = uri.getPath();
+        }
         Object localStorage = dsInfos.get("localStorage");
         if (localStorage != null) {
             hostPath = hostPath.replaceFirst("/", "");
@@ -401,6 +413,9 @@ public class CloudStackPrimaryDataStoreLifeCycleImpl implements PrimaryDataStore
             try {
                 storageMgr.connectHostToSharedPool(h.getId(), primarystore.getId());
                 poolHosts.add(h);
+            } catch (StorageConflictException se) {
+                primaryDataStoreDao.expunge(primarystore.getId());
+                throw new CloudRuntimeException("Storage has already been added as local storage");
             } catch (Exception e) {
                 s_logger.warn("Unable to establish a connection between " + h + " and " + primarystore, e);
             }
@@ -425,6 +440,9 @@ public class CloudStackPrimaryDataStoreLifeCycleImpl implements PrimaryDataStore
             try {
                 storageMgr.connectHostToSharedPool(host.getId(), dataStore.getId());
                 poolHosts.add(host);
+            } catch (StorageConflictException se) {
+                    primaryDataStoreDao.expunge(dataStore.getId());
+                    throw new CloudRuntimeException("Storage has already been added as local storage to host: " + host.getName());
             } catch (Exception e) {
                 s_logger.warn("Unable to establish a connection between " + host + " and " + dataStore, e);
             }
@@ -512,5 +530,15 @@ public class CloudStackPrimaryDataStoreLifeCycleImpl implements PrimaryDataStore
 
     @Override
     public void updateStoragePool(StoragePool storagePool, Map<String, String> details) {
+    }
+
+    @Override
+    public void enableStoragePool(DataStore dataStore) {
+        dataStoreHelper.enable(dataStore);
+    }
+
+    @Override
+    public void disableStoragePool(DataStore dataStore) {
+        dataStoreHelper.disable(dataStore);
     }
 }

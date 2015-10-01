@@ -389,7 +389,7 @@ public class AncientDataMotionStrategy implements DataMotionStrategy {
 
         VolumeInfo volume = (VolumeInfo)srcData;
         StoragePool destPool = (StoragePool)dataStoreMgr.getDataStore(destData.getDataStore().getId(), DataStoreRole.Primary);
-        MigrateVolumeCommand command = new MigrateVolumeCommand(volume.getId(), volume.getPath(), destPool, volume.getAttachedVmName(), waitInterval);
+        MigrateVolumeCommand command = new MigrateVolumeCommand(volume.getId(), volume.getPath(), destPool, volume.getAttachedVmName(), volume.getVolumeType(), waitInterval);
         EndPoint ep = selector.select(srcData, StorageAction.MIGRATEVOLUME);
         Answer answer = null;
         if (ep == null) {
@@ -407,6 +407,10 @@ public class AncientDataMotionStrategy implements DataMotionStrategy {
             VolumeVO volumeVo = volDao.findById(volume.getId());
             Long oldPoolId = volume.getPoolId();
             volumeVo.setPath(((MigrateVolumeAnswer)answer).getVolumePath());
+            String chainInfo = ((MigrateVolumeAnswer)answer).getVolumeChainInfo();
+            if (chainInfo != null) {
+                volumeVo.setChainInfo(chainInfo);
+            }
             volumeVo.setPodId(destPool.getPodId());
             volumeVo.setPoolId(destPool.getId());
             volumeVo.setLastPoolId(oldPoolId);

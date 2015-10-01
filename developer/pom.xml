@@ -80,12 +80,6 @@
                 <copy todir="${basedir}/target/db" filtering="true">
                   <fileset dir="${basedir}/../setup/db/"/>
                 </copy>
-                <copy todir="${basedir}/target/db" filtering="true">
-                  <fileset
-                      dir="${basedir}/../awsapi-setup/db/mysql/">
-                    <include name="**/*.sql"/>
-                  </fileset>
-                </copy>
               </target>
             </configuration>
           </execution>
@@ -137,25 +131,74 @@
                 <argument>${basedir}/target/db/create-schema-premium.sql</argument>
                 <!-- Seed templates -->
                 <argument>${basedir}/target/db/templates.sql</argument>
-                <!-- Run cloudbridge related sqls -->
-                <argument>${basedir}/target/db/cloudbridge_schema.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_multipart.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_index.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_multipart_alter.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_bucketpolicy.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_policy_alter.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_offering.sql</argument>
-                <argument>${basedir}/target/db/cloudbridge_offering_alter.sql</argument>
                 <!-- Seed the database -->
                 <argument>${basedir}/developer-prefill.sql</argument>
                 <argument>${basedir}/developer-prefill.sql.override</argument>
                 <!-- Do database upgrade-->
                 <argument>com.cloud.upgrade.DatabaseUpgradeChecker</argument>
-                <argument>--database=cloud,usage,awsapi</argument>
+                <argument>--database=cloud,usage</argument>
                 <argument>--rootpassword=${db.root.password}</argument>
                 <!-- Print help using -h or dash-dash-help -->
                 <!-- Do dry run using -d or dash-dash-dry -->
                 <!-- Enable verbosity by -v or dash-dash-verbose -->
+              </arguments>
+              <systemProperties>
+                <systemProperty>
+                  <key>catalina.home</key>
+                  <value>${basedir}/../utils</value>
+                </systemProperty>
+                <systemProperty>
+                  <key>paths.script</key>
+                  <value>${basedir}/target/db</value>
+                </systemProperty>
+              </systemProperties>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <!-- saml deploydb property -->
+      <id>deploydb-saml</id>
+      <activation>
+        <property>
+          <name>deploydb-saml</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <dependencies>
+              <dependency>
+                <groupId>mysql</groupId>
+                <artifactId>mysql-connector-java</artifactId>
+                <version>${cs.mysql.version}</version>
+              </dependency>
+            </dependencies>
+            <version>1.2.1</version>
+            <executions>
+              <execution>
+                <phase>process-resources</phase>
+                <id>create-schema-simulator</id>
+                <goals>
+                  <goal>java</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <mainClass>com.cloud.upgrade.DatabaseCreator</mainClass>
+              <includePluginDependencies>true</includePluginDependencies>
+              <arguments>
+                <!-- db properties file -->
+                <argument>${basedir}/../utils/conf/db.properties</argument>
+                <argument>${basedir}/../utils/conf/db.properties.override</argument>
+                <!-- simulator sql files -->
+                <argument>${basedir}/developer-saml.sql</argument>
+                <!-- upgrade -->
+                <argument>com.cloud.upgrade.DatabaseUpgradeChecker</argument>
+                <argument>--rootpassword=${db.root.password}</argument>
               </arguments>
               <systemProperties>
                 <systemProperty>

@@ -256,7 +256,7 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
         try {
             VmwareHypervisorHost hyperHost = hostService.getHyperHost(context, cmd);
 
-            String templateUuidName = UUID.nameUUIDFromBytes((templateName + "@" + cmd.getPoolUuid() + "-" + hyperHost.getMor().getValue()).getBytes()).toString();
+            String templateUuidName = UUID.nameUUIDFromBytes((templateName + "@" + cmd.getPoolUuid() + "-" + hyperHost.getMor().getValue()).getBytes("UTF-8")).toString();
             // truncate template name to 32 chars to ensure they work well with vSphere API's.
             templateUuidName = templateUuidName.replace("-", "");
 
@@ -618,7 +618,7 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
 
         VirtualMachineMO clonedVm = null;
         try {
-            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath, false);
+            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath);
             if (volumeDeviceInfo == null) {
                 String msg = "Unable to find related disk device for volume. volume path: " + volumePath;
                 s_logger.error(msg);
@@ -786,7 +786,7 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
         // TODO a bit ugly here
         BufferedWriter out = null;
         try {
-            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/template.properties")));
+            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/template.properties"),"UTF-8"));
             out.write("filename=" + templateName + ".ova");
             out.newLine();
             out.write("description=");
@@ -826,7 +826,7 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
         // TODO a bit ugly here
         BufferedWriter out = null;
         try {
-            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/" + templateName + ".ova.meta")));
+            out = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(installFullPath + "/" + templateName + ".ova.meta"),"UTF-8"));
             out.write("ova.filename=" + templateName + ".ova");
             out.newLine();
             out.write("version=1.0");
@@ -941,7 +941,7 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
         VirtualMachineMO clonedVm = null;
         try {
 
-            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath, false);
+            Pair<VirtualDisk, String> volumeDeviceInfo = vmMo.getDiskDevice(volumePath);
             if (volumeDeviceInfo == null) {
                 String msg = "Unable to find related disk device for volume. volume path: " + volumePath;
                 s_logger.error(msg);
@@ -1019,7 +1019,6 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
 
     private String getVolumePathInDatastore(DatastoreMO dsMo, String volumeFileName) throws Exception {
         String datastoreVolumePath = dsMo.searchFileInSubFolders(volumeFileName, true);
-        assert (datastoreVolumePath != null) : "Virtual disk file missing from datastore.";
         if (datastoreVolumePath == null) {
             throw new CloudRuntimeException("Unable to find file " + volumeFileName + " in datastore " + dsMo.getName());
         }
@@ -1041,11 +1040,9 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
     private String createOVAFromMetafile(String metafileName) throws Exception {
         File ova_metafile = new File(metafileName);
         Properties props = null;
-        FileInputStream strm = null;
         String ovaFileName = "";
         s_logger.info("Creating OVA using MetaFile: " + metafileName);
-        try {
-            strm = new FileInputStream(ova_metafile);
+        try (FileInputStream strm = new FileInputStream(ova_metafile);) {
 
             s_logger.info("loading properties from ova meta file: " + metafileName);
             props = new Properties();
@@ -1095,13 +1092,6 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
         } catch (Exception e) {
             s_logger.error("Exception while creating OVA using Metafile", e);
             throw e;
-        } finally {
-            if (strm != null) {
-                try {
-                    strm.close();
-                } catch (Exception e) {
-                }
-            }
         }
 
     }
@@ -1197,12 +1187,12 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
 
             if (vmMo == null) {
                 String msg = "Unable to find VM for CreateVMSnapshotCommand";
-                s_logger.debug(msg);
+                s_logger.info(msg);
 
                 return new CreateVMSnapshotAnswer(cmd, false, msg);
             } else {
                 if (vmMo.getSnapshotMor(vmSnapshotName) != null) {
-                    s_logger.debug("VM snapshot " + vmSnapshotName + " already exists");
+                    s_logger.info("VM snapshot " + vmSnapshotName + " already exists");
                 } else if (!vmMo.createSnapshot(vmSnapshotName, vmSnapshotDesc, snapshotMemory, quiescevm)) {
                     return new CreateVMSnapshotAnswer(cmd, false, "Unable to create snapshot due to esxi internal failed");
                 }
@@ -1222,6 +1212,8 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
                     vmMo.removeSnapshot(vmSnapshotName, false);
                 }
             } catch (Exception e1) {
+                s_logger.info("[ignored]"
+                        + "error during snapshot remove: " + e1.getLocalizedMessage());
             }
 
             return new CreateVMSnapshotAnswer(cmd, false, e.getMessage());
@@ -1319,6 +1311,8 @@ public class VmwareStorageManagerImpl implements VmwareStorageManager {
             }
         }
         catch (Exception ex) {
+            s_logger.info("[ignored]"
+                    + "error getting managed object refference: " + ex.getLocalizedMessage());
         }
 
         // not managed storage, so use the standard way of getting a ManagedObjectReference for a datastore

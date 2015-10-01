@@ -27,8 +27,6 @@ import java.util.UUID;
 import javax.ejb.Local;
 import javax.inject.Inject;
 
-import org.apache.log4j.Logger;
-
 import org.apache.cloudstack.engine.subsystem.api.storage.PrimaryDataStore;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
@@ -41,6 +39,7 @@ import org.apache.cloudstack.storage.command.StorageSubSystemCommand;
 import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 import org.apache.cloudstack.storage.to.VolumeObjectTO;
+import org.apache.log4j.Logger;
 
 import com.cloud.agent.api.BackupSnapshotCommand;
 import com.cloud.agent.api.Command;
@@ -267,10 +266,10 @@ public class VMwareGuru extends HypervisorGuruBase implements HypervisorGuru, Co
                     } catch (InsufficientAddressCapacityException e) {
                         throw new CloudRuntimeException("unable to allocate mac address on network: " + networkId);
                     }
-                    nicTo.setDns1(publicNicProfile.getDns1());
-                    nicTo.setDns2(publicNicProfile.getDns2());
-                    if (publicNicProfile.getGateway() != null) {
-                        nicTo.setGateway(publicNicProfile.getGateway());
+                    nicTo.setDns1(publicNicProfile.getIPv4Dns1());
+                    nicTo.setDns2(publicNicProfile.getIPv4Dns2());
+                    if (publicNicProfile.getIPv4Gateway() != null) {
+                        nicTo.setGateway(publicNicProfile.getIPv4Gateway());
                     } else {
                         nicTo.setGateway(network.getGateway());
                     }
@@ -378,11 +377,21 @@ public class VMwareGuru extends HypervisorGuruBase implements HypervisorGuru, Co
         //NOTE: the hostid can be a hypervisor host, or a ssvm agent. For copycommand, if it's for volume upload, the hypervisor
         //type is empty, so we need to check the format of volume at first.
         if (cmd instanceof CopyCommand) {
-            CopyCommand cpyCommand = (CopyCommand)cmd;
+            CopyCommand cpyCommand = (CopyCommand) cmd;
             DataTO srcData = cpyCommand.getSrcTO();
             DataStoreTO srcStoreTO = srcData.getDataStore();
             DataTO destData = cpyCommand.getDestTO();
             DataStoreTO destStoreTO = destData.getDataStore();
+
+            boolean inSeq = true;
+            if ((srcData.getObjectType() == DataObjectType.SNAPSHOT) || (destData.getObjectType() == DataObjectType.SNAPSHOT)) {
+                inSeq = false;
+            } else if ((destStoreTO.getRole() == DataStoreRole.Image) || (destStoreTO.getRole() == DataStoreRole.ImageCache)) {
+                inSeq = false;
+            } else if (!VmwareFullClone.value()) {
+                inSeq = false;
+            }
+            cpyCommand.setExecuteInSequence(inSeq);
 
             if (srcData.getObjectType() == DataObjectType.VOLUME) {
                 VolumeObjectTO volumeObjectTO = (VolumeObjectTO)srcData;

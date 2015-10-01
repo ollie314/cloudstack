@@ -191,7 +191,7 @@ public class CommandSetupHelper {
         final String zoneName = _dcDao.findById(router.getDataCenterId()).getName();
         cmds.addCommand(
                 "vmdata",
-                generateVmDataCommand(router, nic.getIp4Address(), vm.getUserData(), serviceOffering, zoneName, nic.getIp4Address(), vm.getHostName(), vm.getInstanceName(),
+                generateVmDataCommand(router, nic.getIPv4Address(), vm.getUserData(), serviceOffering, zoneName, nic.getIPv4Address(), vm.getHostName(), vm.getInstanceName(),
                         vm.getId(), vm.getUuid(), publicKey, nic.getNetworkId()));
     }
 
@@ -217,10 +217,10 @@ public class CommandSetupHelper {
     }
 
     public void createDhcpEntryCommand(final VirtualRouter router, final UserVm vm, final NicVO nic, final Commands cmds) {
-        final DhcpEntryCommand dhcpCommand = new DhcpEntryCommand(nic.getMacAddress(), nic.getIp4Address(), vm.getHostName(), nic.getIp6Address(),
+        final DhcpEntryCommand dhcpCommand = new DhcpEntryCommand(nic.getMacAddress(), nic.getIPv4Address(), vm.getHostName(), nic.getIPv6Address(),
                 _networkModel.getExecuteInSeqNtwkElmtCmd());
 
-        String gatewayIp = nic.getGateway();
+        String gatewayIp = nic.getIPv4Gateway();
         if (!nic.isDefaultNic()) {
             final GuestOSVO guestOS = _guestOSDao.findById(vm.getGuestOSId());
             if (guestOS == null || !guestOS.getDisplayName().toLowerCase().contains("windows")) {
@@ -231,11 +231,11 @@ public class CommandSetupHelper {
         final DataCenterVO dcVo = _dcDao.findById(router.getDataCenterId());
 
         dhcpCommand.setDefaultRouter(gatewayIp);
-        dhcpCommand.setIp6Gateway(nic.getIp6Gateway());
+        dhcpCommand.setIp6Gateway(nic.getIPv6Gateway());
         String ipaddress = null;
         final NicVO domrDefaultNic = findDefaultDnsIp(vm.getId());
         if (domrDefaultNic != null) {
-            ipaddress = domrDefaultNic.getIp4Address();
+            ipaddress = domrDefaultNic.getIPv4Address();
         }
         dhcpCommand.setDefaultDns(ipaddress);
         dhcpCommand.setDuid(NetUtils.getDuidLL(nic.getMacAddress()));
@@ -268,13 +268,13 @@ public class CommandSetupHelper {
         final List<DhcpTO> ipList = new ArrayList<DhcpTO>();
 
         final NicVO router_guest_nic = _nicDao.findByNtwkIdAndInstanceId(network.getId(), router.getId());
-        final String cidr = NetUtils.getCidrFromGatewayAndNetmask(router_guest_nic.getGateway(), router_guest_nic.getNetmask());
+        final String cidr = NetUtils.getCidrFromGatewayAndNetmask(router_guest_nic.getIPv4Gateway(), router_guest_nic.getIPv4Netmask());
         final String[] cidrPair = cidr.split("\\/");
         final String cidrAddress = cidrPair[0];
         final long cidrSize = Long.parseLong(cidrPair[1]);
         final String startIpOfSubnet = NetUtils.getIpRangeStartIpFromCidr(cidrAddress, cidrSize);
 
-        ipList.add(new DhcpTO(router_guest_nic.getIp4Address(), router_guest_nic.getGateway(), router_guest_nic.getNetmask(), startIpOfSubnet));
+        ipList.add(new DhcpTO(router_guest_nic.getIPv4Address(), router_guest_nic.getIPv4Gateway(), router_guest_nic.getIPv4Netmask(), startIpOfSubnet));
         for (final NicIpAliasVO ipAliasVO : ipAliasVOList) {
             final DhcpTO DhcpTO = new DhcpTO(ipAliasVO.getIp4Address(), ipAliasVO.getGateway(), ipAliasVO.getNetmask(), ipAliasVO.getStartIpOfSubnet());
             if (s_logger.isTraceEnabled()) {
@@ -482,100 +482,8 @@ public class CommandSetupHelper {
     }
 
     public void createAssociateIPCommands(final VirtualRouter router, final List<? extends PublicIpAddress> ips, final Commands cmds, final long vmId) {
-
-        // Ensure that in multiple vlans case we first send all ip addresses of
-        // vlan1, then all ip addresses of vlan2, etc..
-        final Map<String, ArrayList<PublicIpAddress>> vlanIpMap = new HashMap<String, ArrayList<PublicIpAddress>>();
-        for (final PublicIpAddress ipAddress : ips) {
-            final String vlanTag = ipAddress.getVlanTag();
-            ArrayList<PublicIpAddress> ipList = vlanIpMap.get(vlanTag);
-            if (ipList == null) {
-                ipList = new ArrayList<PublicIpAddress>();
-            }
-            // domR doesn't support release for sourceNat IP address; so reset
-            // the state
-            if (ipAddress.isSourceNat() && ipAddress.getState() == IpAddress.State.Releasing) {
-                ipAddress.setState(IpAddress.State.Allocated);
-            }
-            ipList.add(ipAddress);
-            vlanIpMap.put(vlanTag, ipList);
-        }
-
-        final List<NicVO> nics = _nicDao.listByVmId(router.getId());
-        String baseMac = null;
-        for (final NicVO nic : nics) {
-            final NetworkVO nw = _networkDao.findById(nic.getNetworkId());
-            if (nw.getTrafficType() == TrafficType.Public) {
-                baseMac = nic.getMacAddress();
-                break;
-            }
-        }
-
-        for (final Map.Entry<String, ArrayList<PublicIpAddress>> vlanAndIp : vlanIpMap.entrySet()) {
-            final List<PublicIpAddress> ipAddrList = vlanAndIp.getValue();
-            // Source nat ip address should always be sent first
-            Collections.sort(ipAddrList, new Comparator<PublicIpAddress>() {
-                @Override
-                public int compare(final PublicIpAddress o1, final PublicIpAddress o2) {
-                    final boolean s1 = o1.isSourceNat();
-                    final boolean s2 = o2.isSourceNat();
-                    return s1 ^ s2 ? s1 ^ true ? 1 : -1 : 0;
-                }
-            });
-
-            // Get network rate - required for IpAssoc
-            final Integer networkRate = _networkModel.getNetworkRate(ipAddrList.get(0).getNetworkId(), router.getId());
-            final Network network = _networkModel.getNetwork(ipAddrList.get(0).getNetworkId());
-
-            final IpAddressTO[] ipsToSend = new IpAddressTO[ipAddrList.size()];
-            int i = 0;
-            boolean firstIP = true;
-
-            for (final PublicIpAddress ipAddr : ipAddrList) {
-
-                final boolean add = ipAddr.getState() == IpAddress.State.Releasing ? false : true;
-                boolean sourceNat = ipAddr.isSourceNat();
-                /* enable sourceNAT for the first ip of the public interface */
-                if (firstIP) {
-                    sourceNat = true;
-                }
-                final String vlanId = ipAddr.getVlanTag();
-                final String vlanGateway = ipAddr.getGateway();
-                final String vlanNetmask = ipAddr.getNetmask();
-                String vifMacAddress = null;
-                // For non-source nat IP, set the mac to be something based on
-                // first public nic's MAC
-                // We cannot depends on first ip because we need to deal with
-                // first ip of other nics
-                if (!ipAddr.isSourceNat() && ipAddr.getVlanId() != 0) {
-                    vifMacAddress = NetUtils.generateMacOnIncrease(baseMac, ipAddr.getVlanId());
-                } else {
-                    vifMacAddress = ipAddr.getMacAddress();
-                }
-
-                final IpAddressTO ip = new IpAddressTO(ipAddr.getAccountId(), ipAddr.getAddress().addr(), add, firstIP, sourceNat, vlanId, vlanGateway, vlanNetmask,
-                        vifMacAddress, networkRate, ipAddr.isOneToOneNat());
-
-                ip.setTrafficType(network.getTrafficType());
-                ip.setNetworkName(_networkModel.getNetworkTag(router.getHypervisorType(), network));
-                ipsToSend[i++] = ip;
-                /*
-                 * send the firstIP = true for the first Add, this is to create
-                 * primary on interface
-                 */
-                if (!firstIP || add) {
-                    firstIP = false;
-                }
-            }
-            final IpAssocCommand cmd = new IpAssocCommand(ipsToSend);
-            cmd.setAccessDetail(NetworkElementCommand.ROUTER_IP, _routerControlHelper.getRouterControlIp(router.getId()));
-            cmd.setAccessDetail(NetworkElementCommand.ROUTER_GUEST_IP, _routerControlHelper.getRouterIpInNetwork(ipAddrList.get(0).getAssociatedWithNetworkId(), router.getId()));
-            cmd.setAccessDetail(NetworkElementCommand.ROUTER_NAME, router.getInstanceName());
-            final DataCenterVO dcVo = _dcDao.findById(router.getDataCenterId());
-            cmd.setAccessDetail(NetworkElementCommand.ZONE_NETWORK_TYPE, dcVo.getNetworkType().toString());
-
-            cmds.addCommand("IPAssocCommand", cmd);
-        }
+        final String ipAssocCommand = "IPAssocCommand";
+        createRedundantAssociateIPCommands(router, ips, cmds, ipAssocCommand, vmId);
     }
 
     public void createNetworkACLsCommands(final List<? extends NetworkACLItem> rules, final VirtualRouter router, final Commands cmds, final long guestNetworkId,
@@ -615,7 +523,7 @@ public class CommandSetupHelper {
 
         // password should be set only on default network element
         if (password != null && nic.isDefaultNic()) {
-            final SavePasswordCommand cmd = new SavePasswordCommand(password, nic.getIp4Address(), profile.getVirtualMachine().getHostName(),
+            final SavePasswordCommand cmd = new SavePasswordCommand(password, nic.getIPv4Address(), profile.getVirtualMachine().getHostName(),
                     _networkModel.getExecuteInSeqNtwkElmtCmd());
             cmd.setAccessDetail(NetworkElementCommand.ROUTER_IP, _routerControlHelper.getRouterControlIp(router.getId()));
             cmd.setAccessDetail(NetworkElementCommand.ROUTER_GUEST_IP, _routerControlHelper.getRouterIpInNetwork(nic.getNetworkId(), router.getId()));
@@ -741,6 +649,12 @@ public class CommandSetupHelper {
     public void createVpcAssociatePublicIPCommands(final VirtualRouter router, final List<? extends PublicIpAddress> ips, final Commands cmds,
             final Map<String, String> vlanMacAddress) {
 
+        final String ipAssocCommand = "IPAssocVpcCommand";
+        if (router.getIsRedundantRouter()) {
+            createRedundantAssociateIPCommands(router, ips, cmds, ipAssocCommand, 0);
+            return;
+        }
+
         Pair<IpAddressTO, Long> sourceNatIpAdd = null;
         Boolean addSourceNat = null;
         // Ensure that in multiple vlans case we first send all ip addresses of
@@ -794,7 +708,7 @@ public class CommandSetupHelper {
             final DataCenterVO dcVo = _dcDao.findById(router.getDataCenterId());
             cmd.setAccessDetail(NetworkElementCommand.ZONE_NETWORK_TYPE, dcVo.getNetworkType().toString());
 
-            cmds.addCommand("IPAssocVpcCommand", cmd);
+            cmds.addCommand(ipAssocCommand, cmd);
         }
 
         // set source nat ip
@@ -806,6 +720,114 @@ public class CommandSetupHelper {
             final DataCenterVO dcVo = _dcDao.findById(router.getDataCenterId());
             cmd.setAccessDetail(NetworkElementCommand.ZONE_NETWORK_TYPE, dcVo.getNetworkType().toString());
             cmds.addCommand("SetSourceNatCommand", cmd);
+        }
+    }
+
+    public void createRedundantAssociateIPCommands(final VirtualRouter router, final List<? extends PublicIpAddress> ips, final Commands cmds, final String ipAssocCommand, final long vmId) {
+
+        // Ensure that in multiple vlans case we first send all ip addresses of
+        // vlan1, then all ip addresses of vlan2, etc..
+        final Map<String, ArrayList<PublicIpAddress>> vlanIpMap = new HashMap<String, ArrayList<PublicIpAddress>>();
+        for (final PublicIpAddress ipAddress : ips) {
+            final String vlanTag = ipAddress.getVlanTag();
+            ArrayList<PublicIpAddress> ipList = vlanIpMap.get(vlanTag);
+            if (ipList == null) {
+                ipList = new ArrayList<PublicIpAddress>();
+            }
+            // domR doesn't support release for sourceNat IP address; so reset
+            // the state
+            if (ipAddress.isSourceNat() && ipAddress.getState() == IpAddress.State.Releasing) {
+                ipAddress.setState(IpAddress.State.Allocated);
+            }
+            ipList.add(ipAddress);
+            vlanIpMap.put(vlanTag, ipList);
+        }
+
+        final List<NicVO> nics = _nicDao.listByVmId(router.getId());
+        String baseMac = null;
+        for (final NicVO nic : nics) {
+            final NetworkVO nw = _networkDao.findById(nic.getNetworkId());
+            if (nw.getTrafficType() == TrafficType.Public) {
+                baseMac = nic.getMacAddress();
+                break;
+            }
+        }
+
+        for (final Map.Entry<String, ArrayList<PublicIpAddress>> vlanAndIp : vlanIpMap.entrySet()) {
+            final List<PublicIpAddress> ipAddrList = vlanAndIp.getValue();
+            // Source nat ip address should always be sent first
+            Collections.sort(ipAddrList, new Comparator<PublicIpAddress>() {
+                @Override
+                public int compare(final PublicIpAddress o1, final PublicIpAddress o2) {
+                    final boolean s1 = o1.isSourceNat();
+                    final boolean s2 = o2.isSourceNat();
+                    return s1 ^ s2 ? s1 ^ true ? 1 : -1 : 0;
+                }
+            });
+
+            // Get network rate - required for IpAssoc
+            final Integer networkRate = _networkModel.getNetworkRate(ipAddrList.get(0).getNetworkId(), router.getId());
+            final Network network = _networkModel.getNetwork(ipAddrList.get(0).getNetworkId());
+
+            final IpAddressTO[] ipsToSend = new IpAddressTO[ipAddrList.size()];
+            int i = 0;
+            boolean firstIP = true;
+
+            for (final PublicIpAddress ipAddr : ipAddrList) {
+
+                final boolean add = ipAddr.getState() == IpAddress.State.Releasing ? false : true;
+                boolean sourceNat = ipAddr.isSourceNat();
+                /* enable sourceNAT for the first ip of the public interface */
+                if (firstIP) {
+                    sourceNat = true;
+                }
+                final String vlanId = ipAddr.getVlanTag();
+                final String vlanGateway = ipAddr.getGateway();
+                final String vlanNetmask = ipAddr.getNetmask();
+                String vifMacAddress = null;
+                // For non-source nat IP, set the mac to be something based on
+                // first public nic's MAC
+                // We cannot depend on first ip because we need to deal with
+                // first ip of other nics
+                if (router.getVpcId() != null) {
+                    //vifMacAddress = NetUtils.generateMacOnIncrease(baseMac, ipAddr.getVlanId());
+                    vifMacAddress = ipAddr.getMacAddress();
+                } else {
+                    if (!sourceNat && ipAddr.getVlanId() != 0) {
+                        vifMacAddress = NetUtils.generateMacOnIncrease(baseMac, ipAddr.getVlanId());
+                    } else {
+                        vifMacAddress = ipAddr.getMacAddress();
+                    }
+                }
+
+                final IpAddressTO ip = new IpAddressTO(ipAddr.getAccountId(), ipAddr.getAddress().addr(), add, firstIP, sourceNat, vlanId, vlanGateway, vlanNetmask,
+                        vifMacAddress, networkRate, ipAddr.isOneToOneNat());
+
+                ip.setTrafficType(network.getTrafficType());
+                ip.setNetworkName(_networkModel.getNetworkTag(router.getHypervisorType(), network));
+                ipsToSend[i++] = ip;
+                /*
+                 * send the firstIP = true for the first Add, this is to create
+                 * primary on interface
+                 */
+                if (!firstIP || add) {
+                    firstIP = false;
+                }
+            }
+
+            Long associatedWithNetworkId = ipAddrList.get(0).getAssociatedWithNetworkId();
+            if (associatedWithNetworkId == null || associatedWithNetworkId == 0) {
+                associatedWithNetworkId = ipAddrList.get(0).getNetworkId();
+            }
+
+            final IpAssocCommand cmd = new IpAssocCommand(ipsToSend);
+            cmd.setAccessDetail(NetworkElementCommand.ROUTER_IP, _routerControlHelper.getRouterControlIp(router.getId()));
+            cmd.setAccessDetail(NetworkElementCommand.ROUTER_GUEST_IP, _routerControlHelper.getRouterIpInNetwork(associatedWithNetworkId, router.getId()));
+            cmd.setAccessDetail(NetworkElementCommand.ROUTER_NAME, router.getInstanceName());
+            final DataCenterVO dcVo = _dcDao.findById(router.getDataCenterId());
+            cmd.setAccessDetail(NetworkElementCommand.ZONE_NETWORK_TYPE, dcVo.getNetworkType().toString());
+
+            cmds.addCommand(ipAssocCommand, cmd);
         }
     }
 
@@ -887,7 +909,7 @@ public class CommandSetupHelper {
         }
     }
 
-    public SetupGuestNetworkCommand createSetupGuestNetworkCommand(final VirtualRouter router, final boolean add, final NicProfile guestNic) {
+    public SetupGuestNetworkCommand createSetupGuestNetworkCommand(final DomainRouterVO router, final boolean add, final NicProfile guestNic) {
         final Network network = _networkModel.getNetwork(guestNic.getNetworkId());
 
         String defaultDns1 = null;
@@ -899,8 +921,8 @@ public class CommandSetupHelper {
         final boolean setupDns = dnsProvided || dhcpProvided;
 
         if (setupDns) {
-            defaultDns1 = guestNic.getDns1();
-            defaultDns2 = guestNic.getDns2();
+            defaultDns1 = guestNic.getIPv4Dns1();
+            defaultDns2 = guestNic.getIPv4Dns2();
         }
 
         final Nic nic = _nicDao.findByNtwkIdAndInstanceId(network.getId(), router.getId());
@@ -909,10 +931,10 @@ public class CommandSetupHelper {
 
         final NicProfile nicProfile = _networkModel.getNicProfile(router, nic.getNetworkId(), null);
 
-        final SetupGuestNetworkCommand setupCmd = new SetupGuestNetworkCommand(dhcpRange, networkDomain, false, null, defaultDns1, defaultDns2, add, _itMgr.toNicTO(nicProfile,
+        final SetupGuestNetworkCommand setupCmd = new SetupGuestNetworkCommand(dhcpRange, networkDomain, router.getIsRedundantRouter(), defaultDns1, defaultDns2, add, _itMgr.toNicTO(nicProfile,
                 router.getHypervisorType()));
 
-        final String brd = NetUtils.long2Ip(NetUtils.ip2Long(guestNic.getIp4Address()) | ~NetUtils.ip2Long(guestNic.getNetmask()));
+        final String brd = NetUtils.long2Ip(NetUtils.ip2Long(guestNic.getIPv4Address()) | ~NetUtils.ip2Long(guestNic.getIPv4Netmask()));
         setupCmd.setAccessDetail(NetworkElementCommand.ROUTER_IP, _routerControlHelper.getRouterControlIp(router.getId()));
         setupCmd.setAccessDetail(NetworkElementCommand.ROUTER_GUEST_IP, _routerControlHelper.getRouterIpInNetwork(network.getId(), router.getId()));
 
@@ -1000,7 +1022,7 @@ public class CommandSetupHelper {
         // find domR's nic in the network
         NicVO domrDefaultNic;
         if (isZoneBasic) {
-            domrDefaultNic = _nicDao.findByNetworkIdTypeAndGateway(defaultNic.getNetworkId(), VirtualMachine.Type.DomainRouter, defaultNic.getGateway());
+            domrDefaultNic = _nicDao.findByNetworkIdTypeAndGateway(defaultNic.getNetworkId(), VirtualMachine.Type.DomainRouter, defaultNic.getIPv4Gateway());
         } else {
             domrDefaultNic = _nicDao.findByNetworkIdAndType(defaultNic.getNetworkId(), VirtualMachine.Type.DomainRouter);
         }
@@ -1011,8 +1033,8 @@ public class CommandSetupHelper {
         String dhcpRange = null;
         // setup dhcp range
         if (dc.getNetworkType() == NetworkType.Basic) {
-            final long cidrSize = NetUtils.getCidrSize(guestNic.getNetmask());
-            final String cidr = NetUtils.getCidrSubNet(guestNic.getGateway(), cidrSize);
+            final long cidrSize = NetUtils.getCidrSize(guestNic.getIPv4Netmask());
+            final String cidr = NetUtils.getCidrSubNet(guestNic.getIPv4Gateway(), cidrSize);
             if (cidr != null) {
                 dhcpRange = NetUtils.getIpRangeStartIpFromCidr(cidr, cidrSize);
             }

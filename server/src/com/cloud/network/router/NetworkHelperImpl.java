@@ -28,6 +28,7 @@ import javax.annotation.PostConstruct;
 import javax.ejb.Local;
 import javax.inject.Inject;
 
+import org.apache.cloudstack.context.CallContext;
 import org.apache.cloudstack.engine.orchestration.service.NetworkOrchestrationService;
 import org.apache.cloudstack.framework.config.ConfigKey;
 import org.apache.log4j.Logger;
@@ -35,8 +36,6 @@ import org.cloud.network.router.deployment.RouterDeploymentDefinition;
 
 import com.cloud.agent.AgentManager;
 import com.cloud.agent.api.Answer;
-import com.cloud.agent.api.BumpUpPriorityCommand;
-import com.cloud.agent.api.routing.NetworkElementCommand;
 import com.cloud.agent.api.to.NicTO;
 import com.cloud.agent.manager.Commands;
 import com.cloud.alert.AlertManager;
@@ -66,7 +65,6 @@ import com.cloud.network.Network;
 import com.cloud.network.NetworkModel;
 import com.cloud.network.Networks.BroadcastDomainType;
 import com.cloud.network.Networks.IsolationType;
-import com.cloud.network.VirtualNetworkApplianceService;
 import com.cloud.network.addr.PublicIp;
 import com.cloud.network.dao.IPAddressDao;
 import com.cloud.network.dao.NetworkDao;
@@ -86,6 +84,8 @@ import com.cloud.storage.dao.VolumeDao;
 import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
 import com.cloud.user.User;
+import com.cloud.user.UserVO;
+import com.cloud.user.dao.UserDao;
 import com.cloud.utils.exception.CloudRuntimeException;
 import com.cloud.utils.net.NetUtils;
 import com.cloud.vm.DomainRouterVO;
@@ -110,7 +110,7 @@ public class NetworkHelperImpl implements NetworkHelper {
     @Inject
     protected NicDao _nicDao;
     @Inject
-    private NetworkDao _networkDao;
+    protected NetworkDao _networkDao;
     @Inject
     protected DomainRouterDao _routerDao;
     @Inject
@@ -120,8 +120,6 @@ public class NetworkHelperImpl implements NetworkHelper {
     @Inject
     protected NetworkModel _networkModel;
     @Inject
-    private VirtualMachineManager _itMgr;
-    @Inject
     private AccountManager _accountMgr;
     @Inject
     private Site2SiteVpnManager _s2sVpnMgr;
@@ -129,8 +127,6 @@ public class NetworkHelperImpl implements NetworkHelper {
     private HostDao _hostDao;
     @Inject
     private VolumeDao _volumeDao;
-    @Inject
-    private ServiceOfferingDao _serviceOfferingDao;
     @Inject
     private VMTemplateDao _templateDao;
     @Inject
@@ -140,13 +136,17 @@ public class NetworkHelperImpl implements NetworkHelper {
     @Inject
     protected IPAddressDao _ipAddressDao;
     @Inject
-    private IpAddressManager _ipAddrMgr;
-    @Inject
     private UserIpv6AddressDao _ipv6Dao;
     @Inject
-    private RouterControlHelper _routerControlHelper;
-    @Inject
     protected NetworkOrchestrationService _networkMgr;
+    @Inject
+    private UserDao _userDao;
+    @Inject
+    protected ServiceOfferingDao _serviceOfferingDao;
+    @Inject
+    protected VirtualMachineManager _itMgr;
+    @Inject
+    protected IpAddressManager _ipAddrMgr;
 
     protected final Map<HypervisorType, ConfigKey<String>> hypervisorsMap = new HashMap<>();
 
@@ -157,13 +157,14 @@ public class NetworkHelperImpl implements NetworkHelper {
         hypervisorsMap.put(HypervisorType.VMware, VirtualNetworkApplianceManager.RouterTemplateVmware);
         hypervisorsMap.put(HypervisorType.Hyperv, VirtualNetworkApplianceManager.RouterTemplateHyperV);
         hypervisorsMap.put(HypervisorType.LXC, VirtualNetworkApplianceManager.RouterTemplateLxc);
+        hypervisorsMap.put(HypervisorType.Ovm3, VirtualNetworkApplianceManager.RouterTemplateOvm3);
     }
 
     @Override
     public boolean sendCommandsToRouter(final VirtualRouter router, final Commands cmds) throws AgentUnavailableException, ResourceUnavailableException {
         if (!checkRouterVersion(router)) {
             s_logger.debug("Router requires upgrade. Unable to send command to router:" + router.getId() + ", router template version : " + router.getTemplateVersion()
-                    + ", minimal required version : " + VirtualNetworkApplianceService.MinVRVersion);
+                    + ", minimal required version : " + NetworkOrchestrationService.MinVRVersion.valueIn(router.getDataCenterId()));
             throw new ResourceUnavailableException("Unable to send command. Router requires upgrade", VirtualRouter.class, router.getId());
         }
         Answer[] answers = null;
@@ -174,7 +175,7 @@ public class NetworkHelperImpl implements NetworkHelper {
             throw new AgentUnavailableException("Unable to send commands to virtual router ", router.getHostId(), e);
         }
 
-        if ((answers == null) || (answers.length != cmds.size())) {
+        if (answers == null || answers.length != cmds.size()) {
             return false;
         }
 
@@ -195,17 +196,17 @@ public class NetworkHelperImpl implements NetworkHelper {
         if (connectedRouters.isEmpty() || disconnectedRouters.isEmpty()) {
             return;
         }
-        if ((connectedRouters.size() != 1) || (disconnectedRouters.size() != 1)) {
-            s_logger.warn("How many redundant routers do we have?? ");
-            return;
+
+        for (final VirtualRouter virtualRouter : connectedRouters) {
+            if (!virtualRouter.getIsRedundantRouter()) {
+                throw new ResourceUnavailableException("Who is calling this with non-redundant router or non-domain router?", DataCenter.class, virtualRouter.getDataCenterId());
+            }
         }
-        if (!connectedRouters.get(0).getIsRedundantRouter()) {
-            throw new ResourceUnavailableException("Who is calling this with non-redundant router or non-domain router?", DataCenter.class, connectedRouters.get(0)
-                    .getDataCenterId());
-        }
-        if (!disconnectedRouters.get(0).getIsRedundantRouter()) {
-            throw new ResourceUnavailableException("Who is calling this with non-redundant router or non-domain router?", DataCenter.class, disconnectedRouters.get(0)
-                    .getDataCenterId());
+
+        for (final VirtualRouter virtualRouter : disconnectedRouters) {
+            if (!virtualRouter.getIsRedundantRouter()) {
+                throw new ResourceUnavailableException("Who is calling this with non-redundant router or non-domain router?", DataCenter.class, virtualRouter.getDataCenterId());
+            }
         }
 
         final DomainRouterVO connectedRouter = (DomainRouterVO) connectedRouters.get(0);
@@ -220,38 +221,11 @@ public class NetworkHelperImpl implements NetworkHelper {
         _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_DOMAIN_ROUTER, disconnectedRouter.getDataCenterId(), disconnectedRouter.getPodIdToDeployIn(), title, context);
         disconnectedRouter.setStopPending(true);
         disconnectedRouter = _routerDao.persist(disconnectedRouter);
-
-        final int connRouterPR = getRealPriority(connectedRouter);
-        final int disconnRouterPR = getRealPriority(disconnectedRouter);
-        if (connRouterPR < disconnRouterPR) {
-            // connRouterPR < disconnRouterPR, they won't equal at any time
-            if (!connectedRouter.getIsPriorityBumpUp()) {
-                final BumpUpPriorityCommand command = new BumpUpPriorityCommand();
-                command.setAccessDetail(NetworkElementCommand.ROUTER_IP, _routerControlHelper.getRouterControlIp(connectedRouter.getId()));
-                command.setAccessDetail(NetworkElementCommand.ROUTER_NAME, connectedRouter.getInstanceName());
-                final Answer answer = _agentMgr.easySend(connectedRouter.getHostId(), command);
-                if (!answer.getResult()) {
-                    s_logger.error("Failed to bump up " + connectedRouter.getInstanceName() + "'s priority! " + answer.getDetails());
-                }
-            } else {
-                final String t = "Can't bump up virtual router " + connectedRouter.getInstanceName() + "'s priority due to it's already bumped up!";
-                _alertMgr.sendAlert(AlertManager.AlertType.ALERT_TYPE_DOMAIN_ROUTER, connectedRouter.getDataCenterId(), connectedRouter.getPodIdToDeployIn(), t, t);
-            }
-        }
-    }
-
-    @Override
-    public int getRealPriority(final DomainRouterVO router) {
-        int priority = router.getPriority();
-        if (router.getIsPriorityBumpUp()) {
-            priority += VirtualNetworkApplianceManager.DEFAULT_DELTA;
-        }
-        return priority;
     }
 
     @Override
     public NicTO getNicTO(final VirtualRouter router, final Long networkId, final String broadcastUri) {
-        NicProfile nicProfile = _networkModel.getNicProfile(router, networkId, broadcastUri);
+        final NicProfile nicProfile = _networkModel.getNicProfile(router, networkId, broadcastUri);
 
         return _itMgr.toNicTO(nicProfile, router.getHypervisorType());
     }
@@ -284,8 +258,9 @@ public class NetworkHelperImpl implements NetworkHelper {
         if (router.getTemplateVersion() == null) {
             return false;
         }
+        final long dcid = router.getDataCenterId();
         final String trimmedVersion = Version.trimRouterVersion(router.getTemplateVersion());
-        return Version.compare(trimmedVersion, VirtualNetworkApplianceService.MinVRVersion) >= 0;
+        return Version.compare(trimmedVersion, NetworkOrchestrationService.MinVRVersion.valueIn(dcid)) >= 0;
     }
 
     protected DomainRouterVO start(DomainRouterVO router, final User user, final Account caller, final Map<Param, Object> params, final DeploymentPlan planToDeploy)
@@ -320,7 +295,7 @@ public class NetworkHelperImpl implements NetworkHelper {
         while (vm.getState() == State.Starting) {
             try {
                 Thread.sleep(1000);
-            } catch (InterruptedException e) {
+            } catch (final InterruptedException e) {
             }
 
             // reload to get the latest state info
@@ -343,14 +318,14 @@ public class NetworkHelperImpl implements NetworkHelper {
     public List<DomainRouterVO> startRouters(final RouterDeploymentDefinition routerDeploymentDefinition) throws StorageUnavailableException, InsufficientCapacityException,
     ConcurrentOperationException, ResourceUnavailableException {
 
-        List<DomainRouterVO> runningRouters = new ArrayList<DomainRouterVO>();
+        final List<DomainRouterVO> runningRouters = new ArrayList<DomainRouterVO>();
 
         for (DomainRouterVO router : routerDeploymentDefinition.getRouters()) {
             boolean skip = false;
             final State state = router.getState();
-            if ((router.getHostId() != null) && (state != State.Running)) {
+            if (router.getHostId() != null && state != State.Running) {
                 final HostVO host = _hostDao.findById(router.getHostId());
-                if ((host == null) || (host.getState() != Status.Up)) {
+                if (host == null || host.getState() != Status.Up) {
                     skip = true;
                 }
             }
@@ -370,7 +345,7 @@ public class NetworkHelperImpl implements NetworkHelper {
     public DomainRouterVO startVirtualRouter(final DomainRouterVO router, final User user, final Account caller, final Map<Param, Object> params)
             throws StorageUnavailableException, InsufficientCapacityException, ConcurrentOperationException, ResourceUnavailableException {
 
-        if ((router.getRole() != Role.VIRTUAL_ROUTER) || !router.getIsRedundantRouter()) {
+        if (router.getRole() != Role.VIRTUAL_ROUTER || !router.getIsRedundantRouter()) {
             return start(router, user, caller, params, null);
         }
 
@@ -388,19 +363,16 @@ public class NetworkHelperImpl implements NetworkHelper {
             return waitRouter(router);
         }
 
-        DataCenterDeployment plan = new DataCenterDeployment(0, null, null, null, null, null);
+        final DataCenterDeployment plan = new DataCenterDeployment(0, null, null, null, null, null);
         DomainRouterVO result = null;
         assert router.getIsRedundantRouter();
         final List<Long> networkIds = _routerDao.getRouterNetworks(router.getId());
-        // Not support VPC now
-        if (networkIds.size() > 1) {
-            throw new ResourceUnavailableException("Unable to support more than one guest network for redundant router now!", DataCenter.class, router.getDataCenterId());
-        }
+
         DomainRouterVO routerToBeAvoid = null;
         if (networkIds.size() != 0) {
             final List<DomainRouterVO> routerList = _routerDao.findByNetwork(networkIds.get(0));
             for (final DomainRouterVO rrouter : routerList) {
-                if ((rrouter.getHostId() != null) && rrouter.getIsRedundantRouter() && (rrouter.getState() == State.Running)) {
+                if (rrouter.getHostId() != null && rrouter.getIsRedundantRouter() && rrouter.getState() == State.Running) {
                     if (routerToBeAvoid != null) {
                         throw new ResourceUnavailableException("Try to start router " + router.getInstanceName() + "(" + router.getId() + ")"
                                 + ", but there are already two redundant routers with IP " + router.getPublicIpAddress() + ", they are " + rrouter.getInstanceName() + "("
@@ -423,7 +395,7 @@ public class NetworkHelperImpl implements NetworkHelper {
         avoids[1].addCluster(_hostDao.findById(routerToBeAvoid.getHostId()).getClusterId());
         avoids[2] = new ExcludeList();
         final List<VolumeVO> volumes = _volumeDao.findByInstanceAndType(routerToBeAvoid.getId(), Volume.Type.ROOT);
-        if ((volumes != null) && (volumes.size() != 0)) {
+        if (volumes != null && volumes.size() != 0) {
             avoids[2].addPool(volumes.get(0).getPoolId());
         }
         avoids[2].addHost(routerToBeAvoid.getHostId());
@@ -452,13 +424,13 @@ public class NetworkHelperImpl implements NetworkHelper {
         String templateName = null;
 
         if (hType == HypervisorType.BareMetal) {
-            ConfigKey<String> hypervisorConfigKey = hypervisorsMap.get(HypervisorType.VMware);
+            final ConfigKey<String> hypervisorConfigKey = hypervisorsMap.get(HypervisorType.VMware);
             templateName = hypervisorConfigKey.valueIn(datacenterId);
         } else {
             // Returning NULL is fine because the simulator will need it when
             // being used instead of a real hypervisor.
             // The hypervisorsMap contains only real hypervisors.
-            ConfigKey<String> hypervisorConfigKey = hypervisorsMap.get(hType);
+            final ConfigKey<String> hypervisorConfigKey = hypervisorsMap.get(hType);
 
             if (hypervisorConfigKey != null) {
                 templateName = hypervisorConfigKey.valueIn(datacenterId);
@@ -469,10 +441,10 @@ public class NetworkHelperImpl implements NetworkHelper {
     }
 
     @Override
-    public DomainRouterVO deployRouter(final RouterDeploymentDefinition routerDeploymentDefinition, final boolean startRouter) throws InsufficientAddressCapacityException,
-    InsufficientServerCapacityException, InsufficientCapacityException, StorageUnavailableException, ResourceUnavailableException {
+    public DomainRouterVO deployRouter(final RouterDeploymentDefinition routerDeploymentDefinition, final boolean startRouter)
+            throws InsufficientAddressCapacityException, InsufficientServerCapacityException, InsufficientCapacityException, StorageUnavailableException, ResourceUnavailableException {
 
-        final ServiceOfferingVO routerOffering = _serviceOfferingDao.findById(routerDeploymentDefinition.getOfferingId());
+        final ServiceOfferingVO routerOffering = _serviceOfferingDao.findById(routerDeploymentDefinition.getServiceOfferingId());
         final Account owner = routerDeploymentDefinition.getOwner();
 
         // Router is the network element, we don't know the hypervisor type yet.
@@ -492,7 +464,7 @@ public class NetworkHelperImpl implements NetworkHelper {
                             .getDataCenter(), hType));
                 }
 
-                String templateName = retrieveTemplateName(hType, routerDeploymentDefinition.getDest().getDataCenter().getId());
+                final String templateName = retrieveTemplateName(hType, routerDeploymentDefinition.getDest().getDataCenter().getId());
                 final VMTemplateVO template = _templateDao.findRoutingTemplate(hType, templateName);
 
                 if (template == null) {
@@ -511,20 +483,28 @@ public class NetworkHelperImpl implements NetworkHelper {
 
                 // routerDeploymentDefinition.getVpc().getId() ==> do not use
                 // VPC because it is not a VPC offering.
-                Long vpcId = routerDeploymentDefinition.getVpc() != null ? routerDeploymentDefinition.getVpc().getId() : null;
+                final Long vpcId = routerDeploymentDefinition.getVpc() != null ? routerDeploymentDefinition.getVpc().getId() : null;
+
+                long userId = CallContext.current().getCallingUserId();
+                if (CallContext.current().getCallingAccount().getId() != owner.getId()) {
+                    List<UserVO> userVOs = _userDao.listByAccount(owner.getAccountId());
+                    if (!userVOs.isEmpty()) {
+                        userId =  userVOs.get(0).getId();
+                    }
+                }
 
                 router = new DomainRouterVO(id, routerOffering.getId(), routerDeploymentDefinition.getVirtualProvider().getId(), VirtualMachineName.getRouterName(id,
                         s_vmInstanceName), template.getId(), template.getHypervisorType(), template.getGuestOSId(), owner.getDomainId(), owner.getId(),
-                        routerDeploymentDefinition.isRedundant(), 0, false, RedundantState.UNKNOWN, offerHA, false, vpcId);
+                        userId, routerDeploymentDefinition.isRedundant(), RedundantState.UNKNOWN, offerHA, false, vpcId);
 
                 router.setDynamicallyScalable(template.isDynamicallyScalable());
                 router.setRole(Role.VIRTUAL_ROUTER);
                 router = _routerDao.persist(router);
-                LinkedHashMap<Network, List<? extends NicProfile>> networks = createRouterNetworks(routerDeploymentDefinition);
-                _itMgr.allocate(router.getInstanceName(), template, routerOffering, networks, routerDeploymentDefinition.getPlan(), null);
+
+                reallocateRouterNetworks(routerDeploymentDefinition, router, template, null);
                 router = _routerDao.findById(router.getId());
             } catch (final InsufficientCapacityException ex) {
-                if ((allocateRetry < 2) && iter.hasNext()) {
+                if (allocateRetry < 2 && iter.hasNext()) {
                     s_logger.debug("Failed to allocate the VR with hypervisor type " + hType + ", retrying one more time");
                     continue;
                 } else {
@@ -539,7 +519,7 @@ public class NetworkHelperImpl implements NetworkHelper {
                     router = startVirtualRouter(router, _accountMgr.getSystemUser(), _accountMgr.getSystemAccount(), routerDeploymentDefinition.getParams());
                     break;
                 } catch (final InsufficientCapacityException ex) {
-                    if ((startRetry < 2) && iter.hasNext()) {
+                    if (startRetry < 2 && iter.hasNext()) {
                         s_logger.debug("Failed to start the VR  " + router + " with hypervisor type " + hType + ", " + "destroying it and recreating one more time");
                         // destroy the router
                         destroyRouter(router.getId(), _accountMgr.getAccount(Account.ACCOUNT_ID_SYSTEM), User.UID_SYSTEM);
@@ -608,12 +588,12 @@ public class NetworkHelperImpl implements NetworkHelper {
     protected HypervisorType getClusterToStartDomainRouterForOvm(final long podId) {
         final List<ClusterVO> clusters = _clusterDao.listByPodId(podId);
         for (final ClusterVO cv : clusters) {
-            if ((cv.getHypervisorType() == HypervisorType.Ovm) || (cv.getHypervisorType() == HypervisorType.BareMetal)) {
+            if (cv.getHypervisorType() == HypervisorType.Ovm || cv.getHypervisorType() == HypervisorType.BareMetal) {
                 continue;
             }
 
             final List<HostVO> hosts = _resourceMgr.listAllHostsInCluster(cv.getId());
-            if ((hosts == null) || hosts.isEmpty()) {
+            if (hosts == null || hosts.isEmpty()) {
                 continue;
             }
 
@@ -632,80 +612,22 @@ public class NetworkHelperImpl implements NetworkHelper {
         throw new CloudRuntimeException(errMsg);
     }
 
-    public LinkedHashMap<Network, List<? extends NicProfile>> createRouterNetworks(final RouterDeploymentDefinition routerDeploymentDefinition)
-            throws ConcurrentOperationException, InsufficientAddressCapacityException {
+    protected LinkedHashMap<Network, List<? extends NicProfile>> configureControlNic(final RouterDeploymentDefinition routerDeploymentDefinition) {
+        final LinkedHashMap<Network, List<? extends NicProfile>> controlConfig = new LinkedHashMap<Network, List<? extends NicProfile>>(3);
 
-        // Form networks
-        LinkedHashMap<Network, List<? extends NicProfile>> networks = new LinkedHashMap<Network, List<? extends NicProfile>>(3);
-        // 1) Guest network
-        boolean hasGuestNetwork = false;
-        if (routerDeploymentDefinition.getGuestNetwork() != null) {
-            s_logger.debug("Adding nic for Virtual Router in Guest network " + routerDeploymentDefinition.getGuestNetwork());
-            String defaultNetworkStartIp = null, defaultNetworkStartIpv6 = null;
-            if (!routerDeploymentDefinition.isPublicNetwork()) {
-                final Nic placeholder = _networkModel.getPlaceholderNicForRouter(routerDeploymentDefinition.getGuestNetwork(), routerDeploymentDefinition.getPodId());
-                if (routerDeploymentDefinition.getGuestNetwork().getCidr() != null) {
-                    if ((placeholder != null) && (placeholder.getIp4Address() != null)) {
-                        s_logger.debug("Requesting ipv4 address " + placeholder.getIp4Address() + " stored in placeholder nic for the network "
-                                + routerDeploymentDefinition.getGuestNetwork());
-                        defaultNetworkStartIp = placeholder.getIp4Address();
-                    } else {
-                        final String startIp = _networkModel.getStartIpAddress(routerDeploymentDefinition.getGuestNetwork().getId());
-                        if ((startIp != null)
-                                && (_ipAddressDao.findByIpAndSourceNetworkId(routerDeploymentDefinition.getGuestNetwork().getId(), startIp).getAllocatedTime() == null)) {
-                            defaultNetworkStartIp = startIp;
-                        } else if (s_logger.isDebugEnabled()) {
-                            s_logger.debug("First ipv4 " + startIp + " in network id=" + routerDeploymentDefinition.getGuestNetwork().getId()
-                                    + " is already allocated, can't use it for domain router; will get random ip address from the range");
-                        }
-                    }
-                }
-
-                if (routerDeploymentDefinition.getGuestNetwork().getIp6Cidr() != null) {
-                    if ((placeholder != null) && (placeholder.getIp6Address() != null)) {
-                        s_logger.debug("Requesting ipv6 address " + placeholder.getIp6Address() + " stored in placeholder nic for the network "
-                                + routerDeploymentDefinition.getGuestNetwork());
-                        defaultNetworkStartIpv6 = placeholder.getIp6Address();
-                    } else {
-                        final String startIpv6 = _networkModel.getStartIpv6Address(routerDeploymentDefinition.getGuestNetwork().getId());
-                        if ((startIpv6 != null) && (_ipv6Dao.findByNetworkIdAndIp(routerDeploymentDefinition.getGuestNetwork().getId(), startIpv6) == null)) {
-                            defaultNetworkStartIpv6 = startIpv6;
-                        } else if (s_logger.isDebugEnabled()) {
-                            s_logger.debug("First ipv6 " + startIpv6 + " in network id=" + routerDeploymentDefinition.getGuestNetwork().getId()
-                                    + " is already allocated, can't use it for domain router; will get random ipv6 address from the range");
-                        }
-                    }
-                }
-            }
-
-            final NicProfile gatewayNic = new NicProfile(defaultNetworkStartIp, defaultNetworkStartIpv6);
-            if (routerDeploymentDefinition.isPublicNetwork()) {
-                if (routerDeploymentDefinition.isRedundant()) {
-                    gatewayNic.setIp4Address(_ipAddrMgr.acquireGuestIpAddress(routerDeploymentDefinition.getGuestNetwork(), null));
-                } else {
-                    gatewayNic.setIp4Address(routerDeploymentDefinition.getGuestNetwork().getGateway());
-                }
-                gatewayNic.setBroadcastUri(routerDeploymentDefinition.getGuestNetwork().getBroadcastUri());
-                gatewayNic.setBroadcastType(routerDeploymentDefinition.getGuestNetwork().getBroadcastDomainType());
-                gatewayNic.setIsolationUri(routerDeploymentDefinition.getGuestNetwork().getBroadcastUri());
-                gatewayNic.setMode(routerDeploymentDefinition.getGuestNetwork().getMode());
-                final String gatewayCidr = routerDeploymentDefinition.getGuestNetwork().getCidr();
-                gatewayNic.setNetmask(NetUtils.getCidrNetmask(gatewayCidr));
-            } else {
-                gatewayNic.setDefaultNic(true);
-            }
-
-            networks.put(routerDeploymentDefinition.getGuestNetwork(), new ArrayList<NicProfile>(Arrays.asList(gatewayNic)));
-            hasGuestNetwork = true;
-        }
-
-        // 2) Control network
         s_logger.debug("Adding nic for Virtual Router in Control network ");
-        List<? extends NetworkOffering> offerings = _networkModel.getSystemAccountNetworkOfferings(NetworkOffering.SystemControlNetwork);
-        NetworkOffering controlOffering = offerings.get(0);
-        Network controlConfig = _networkMgr.setupNetwork(s_systemAccount, controlOffering, routerDeploymentDefinition.getPlan(), null, null, false).get(0);
-        networks.put(controlConfig, new ArrayList<NicProfile>());
-        // 3) Public network
+        final List<? extends NetworkOffering> offerings = _networkModel.getSystemAccountNetworkOfferings(NetworkOffering.SystemControlNetwork);
+        final NetworkOffering controlOffering = offerings.get(0);
+        final Network controlNic = _networkMgr.setupNetwork(s_systemAccount, controlOffering, routerDeploymentDefinition.getPlan(), null, null, false).get(0);
+
+        controlConfig.put(controlNic, new ArrayList<NicProfile>());
+
+        return controlConfig;
+    }
+
+    protected LinkedHashMap<Network, List<? extends NicProfile>> configurePublicNic(final RouterDeploymentDefinition routerDeploymentDefinition, final boolean hasGuestNic) {
+        final LinkedHashMap<Network, List<? extends NicProfile>> publicConfig = new LinkedHashMap<Network, List<? extends NicProfile>>(3);
+
         if (routerDeploymentDefinition.isPublicNetwork()) {
             s_logger.debug("Adding nic for Virtual Router in Public network ");
             // if source nat service is supported by the network, get the source
@@ -713,9 +635,9 @@ public class NetworkHelperImpl implements NetworkHelper {
             final NicProfile defaultNic = new NicProfile();
             defaultNic.setDefaultNic(true);
             final PublicIp sourceNatIp = routerDeploymentDefinition.getSourceNatIP();
-            defaultNic.setIp4Address(sourceNatIp.getAddress().addr());
-            defaultNic.setGateway(sourceNatIp.getGateway());
-            defaultNic.setNetmask(sourceNatIp.getNetmask());
+            defaultNic.setIPv4Address(sourceNatIp.getAddress().addr());
+            defaultNic.setIPv4Gateway(sourceNatIp.getGateway());
+            defaultNic.setIPv4Netmask(sourceNatIp.getNetmask());
             defaultNic.setMacAddress(sourceNatIp.getMacAddress());
             // get broadcast from public network
             final Network pubNet = _networkDao.findById(sourceNatIp.getNetworkId());
@@ -728,12 +650,15 @@ public class NetworkHelperImpl implements NetworkHelper {
                 defaultNic.setBroadcastUri(BroadcastDomainType.Vlan.toUri(sourceNatIp.getVlanTag()));
                 defaultNic.setIsolationUri(IsolationType.Vlan.toUri(sourceNatIp.getVlanTag()));
             }
-            if (hasGuestNetwork) {
+
+            //If guest nic has already been added we will have 2 devices in the list.
+            if (hasGuestNic) {
                 defaultNic.setDeviceId(2);
             }
+
             final NetworkOffering publicOffering = _networkModel.getSystemAccountNetworkOfferings(NetworkOffering.SystemPublicNetwork).get(0);
             final List<? extends Network> publicNetworks = _networkMgr.setupNetwork(s_systemAccount, publicOffering, routerDeploymentDefinition.getPlan(), null, null, false);
-            final String publicIp = defaultNic.getIp4Address();
+            final String publicIp = defaultNic.getIPv4Address();
             // We want to use the identical MAC address for RvR on public
             // interface if possible
             final NicVO peerNic = _nicDao.findByIp4AddressAndNetworkId(publicIp, publicNetworks.get(0).getId());
@@ -741,10 +666,110 @@ public class NetworkHelperImpl implements NetworkHelper {
                 s_logger.info("Use same MAC as previous RvR, the MAC is " + peerNic.getMacAddress());
                 defaultNic.setMacAddress(peerNic.getMacAddress());
             }
-            networks.put(publicNetworks.get(0), new ArrayList<NicProfile>(Arrays.asList(defaultNic)));
+            publicConfig.put(publicNetworks.get(0), new ArrayList<NicProfile>(Arrays.asList(defaultNic)));
         }
 
+        return publicConfig;
+    }
+
+    @Override
+    public LinkedHashMap<Network, List<? extends NicProfile>> configureDefaultNics(final RouterDeploymentDefinition routerDeploymentDefinition) throws ConcurrentOperationException, InsufficientAddressCapacityException {
+
+        final LinkedHashMap<Network, List<? extends NicProfile>> networks = new LinkedHashMap<Network, List<? extends NicProfile>>(3);
+
+        // 1) Guest Network
+        final LinkedHashMap<Network, List<? extends NicProfile>> guestNic = configureGuestNic(routerDeploymentDefinition);
+        networks.putAll(guestNic);
+
+        // 2) Control network
+        final LinkedHashMap<Network, List<? extends NicProfile>> controlNic = configureControlNic(routerDeploymentDefinition);
+        networks.putAll(controlNic);
+
+        // 3) Public network
+        final LinkedHashMap<Network, List<? extends NicProfile>> publicNic = configurePublicNic(routerDeploymentDefinition, networks.size() > 1);
+        networks.putAll(publicNic);
+
         return networks;
+    }
+
+    @Override
+    public LinkedHashMap<Network, List<? extends NicProfile>> configureGuestNic(final RouterDeploymentDefinition routerDeploymentDefinition)
+            throws ConcurrentOperationException, InsufficientAddressCapacityException {
+
+        // Form networks
+        final LinkedHashMap<Network, List<? extends NicProfile>> networks = new LinkedHashMap<Network, List<? extends NicProfile>>(3);
+        // 1) Guest network
+        final Network guestNetwork = routerDeploymentDefinition.getGuestNetwork();
+
+        if (guestNetwork != null) {
+            s_logger.debug("Adding nic for Virtual Router in Guest network " + guestNetwork);
+            String defaultNetworkStartIp = null, defaultNetworkStartIpv6 = null;
+            if (!routerDeploymentDefinition.isPublicNetwork()) {
+                final Nic placeholder = _networkModel.getPlaceholderNicForRouter(guestNetwork, routerDeploymentDefinition.getPodId());
+                if (guestNetwork.getCidr() != null) {
+                    if (placeholder != null && placeholder.getIPv4Address() != null) {
+                        s_logger.debug("Requesting ipv4 address " + placeholder.getIPv4Address() + " stored in placeholder nic for the network "
+                                + guestNetwork);
+                        defaultNetworkStartIp = placeholder.getIPv4Address();
+                    } else {
+                        final String startIp = _networkModel.getStartIpAddress(guestNetwork.getId());
+                        if (startIp != null
+                                && _ipAddressDao.findByIpAndSourceNetworkId(guestNetwork.getId(), startIp).getAllocatedTime() == null) {
+                            defaultNetworkStartIp = startIp;
+                        } else if (s_logger.isDebugEnabled()) {
+                            s_logger.debug("First ipv4 " + startIp + " in network id=" + guestNetwork.getId()
+                                    + " is already allocated, can't use it for domain router; will get random ip address from the range");
+                        }
+                    }
+                }
+
+                if (guestNetwork.getIp6Cidr() != null) {
+                    if (placeholder != null && placeholder.getIPv6Address() != null) {
+                        s_logger.debug("Requesting ipv6 address " + placeholder.getIPv6Address() + " stored in placeholder nic for the network "
+                                + guestNetwork);
+                        defaultNetworkStartIpv6 = placeholder.getIPv6Address();
+                    } else {
+                        final String startIpv6 = _networkModel.getStartIpv6Address(guestNetwork.getId());
+                        if (startIpv6 != null && _ipv6Dao.findByNetworkIdAndIp(guestNetwork.getId(), startIpv6) == null) {
+                            defaultNetworkStartIpv6 = startIpv6;
+                        } else if (s_logger.isDebugEnabled()) {
+                            s_logger.debug("First ipv6 " + startIpv6 + " in network id=" + guestNetwork.getId()
+                                    + " is already allocated, can't use it for domain router; will get random ipv6 address from the range");
+                        }
+                    }
+                }
+            }
+
+            final NicProfile gatewayNic = new NicProfile(defaultNetworkStartIp, defaultNetworkStartIpv6);
+            if (routerDeploymentDefinition.isPublicNetwork()) {
+                if (routerDeploymentDefinition.isRedundant()) {
+                    gatewayNic.setIPv4Address(_ipAddrMgr.acquireGuestIpAddress(guestNetwork, null));
+                } else {
+                    gatewayNic.setIPv4Address(guestNetwork.getGateway());
+                }
+                gatewayNic.setBroadcastUri(guestNetwork.getBroadcastUri());
+                gatewayNic.setBroadcastType(guestNetwork.getBroadcastDomainType());
+                gatewayNic.setIsolationUri(guestNetwork.getBroadcastUri());
+                gatewayNic.setMode(guestNetwork.getMode());
+                final String gatewayCidr = guestNetwork.getCidr();
+                gatewayNic.setIPv4Netmask(NetUtils.getCidrNetmask(gatewayCidr));
+            } else {
+                gatewayNic.setDefaultNic(true);
+            }
+
+            networks.put(guestNetwork, new ArrayList<NicProfile>(Arrays.asList(gatewayNic)));
+        }
+        return networks;
+    }
+
+    @Override
+    public void reallocateRouterNetworks(final RouterDeploymentDefinition routerDeploymentDefinition, final VirtualRouter router, final VMTemplateVO template, final HypervisorType hType)
+            throws ConcurrentOperationException, InsufficientCapacityException {
+        final ServiceOfferingVO routerOffering = _serviceOfferingDao.findById(routerDeploymentDefinition.getServiceOfferingId());
+
+        final LinkedHashMap<Network, List<? extends NicProfile>> networks = configureDefaultNics(routerDeploymentDefinition);
+
+        _itMgr.allocate(router.getInstanceName(), template, routerOffering, networks, routerDeploymentDefinition.getPlan(), hType);
     }
 
     public static void setSystemAccount(final Account systemAccount) {

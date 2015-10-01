@@ -148,7 +148,6 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
     TrafficType _frontendTrafficType = TrafficType.Guest;
 
     Account _systemAcct;
-    ServiceOfferingVO _elasticLbVmOffering;
     ScheduledExecutorService _gcThreadPool;
     String _mgmtCidr;
 
@@ -290,16 +289,18 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
         }
         _mgmtCidr = _configDao.getValue(Config.ManagementNetwork.key());
 
-        boolean useLocalStorage = Boolean.parseBoolean(configs.get(Config.SystemVMUseLocalStorage.key()));
-
         _elasticLbVmRamSize = NumbersUtil.parseInt(configs.get(Config.ElasticLoadBalancerVmMemory.key()), DEFAULT_ELB_VM_RAMSIZE);
         _elasticLbvmCpuMHz = NumbersUtil.parseInt(configs.get(Config.ElasticLoadBalancerVmCpuMhz.key()), DEFAULT_ELB_VM_CPU_MHZ);
         _elasticLbvmNumCpu = NumbersUtil.parseInt(configs.get(Config.ElasticLoadBalancerVmNumVcpu.key()), 1);
-        _elasticLbVmOffering = new ServiceOfferingVO("System Offering For Elastic LB VM", _elasticLbvmNumCpu,
-                _elasticLbVmRamSize, _elasticLbvmCpuMHz, 0, 0, true, null, Storage.ProvisioningType.THIN, useLocalStorage,
-                true, null, true, VirtualMachine.Type.ElasticLoadBalancerVm, true);
-        _elasticLbVmOffering.setUniqueName(ServiceOffering.elbVmDefaultOffUniqueName);
-        _elasticLbVmOffering = _serviceOfferingDao.persistSystemServiceOffering(_elasticLbVmOffering);
+        List<ServiceOfferingVO> offerings = _serviceOfferingDao.createSystemServiceOfferings("System Offering For Elastic LB VM",
+                ServiceOffering.elbVmDefaultOffUniqueName, _elasticLbvmNumCpu, _elasticLbVmRamSize, _elasticLbvmCpuMHz, 0, 0, true, null,
+                Storage.ProvisioningType.THIN, true, null, true, VirtualMachine.Type.ElasticLoadBalancerVm, true);
+        // this can sometimes happen, if DB is manually or programmatically manipulated
+        if (offerings == null || offerings.size() < 2) {
+            String msg = "Data integrity problem : System Offering For Elastic LB VM has been removed?";
+            s_logger.error(msg);
+            throw new ConfigurationException(msg);
+        }
 
         String enabled = _configDao.getValue(Config.ElasticLoadBalancerEnabled.key());
         _enabled = (enabled == null) ? false : Boolean.parseBoolean(enabled);
@@ -322,7 +323,7 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
             _itMgr.registerGuru(VirtualMachine.Type.ElasticLoadBalancerVm, this);
         }
 
-        loadBalanceRuleHandler = new LoadBalanceRuleHandler(_elasticLbVmOffering, _instance, _systemAcct);
+        loadBalanceRuleHandler = new LoadBalanceRuleHandler(_instance, _systemAcct);
 
         return true;
     }
@@ -433,12 +434,12 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
 
         for (NicProfile nic : profile.getNics()) {
             int deviceId = nic.getDeviceId();
-            buf.append(" eth").append(deviceId).append("ip=").append(nic.getIp4Address());
-            buf.append(" eth").append(deviceId).append("mask=").append(nic.getNetmask());
+            buf.append(" eth").append(deviceId).append("ip=").append(nic.getIPv4Address());
+            buf.append(" eth").append(deviceId).append("mask=").append(nic.getIPv4Netmask());
             if (nic.isDefaultNic()) {
-                buf.append(" gateway=").append(nic.getGateway());
-                defaultDns1 = nic.getDns1();
-                defaultDns2 = nic.getDns2();
+                buf.append(" gateway=").append(nic.getIPv4Gateway());
+                defaultDns1 = nic.getIPv4Dns1();
+                defaultDns2 = nic.getIPv4Dns2();
             }
             if (nic.getTrafficType() == TrafficType.Management) {
                 buf.append(" localgw=").append(dest.getPod().getGateway());
@@ -496,11 +497,11 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
         List<NicProfile> nics = profile.getNics();
         for (NicProfile nic : nics) {
             if (nic.getTrafficType() == TrafficType.Public) {
-                elbVm.setPublicIpAddress(nic.getIp4Address());
-                elbVm.setPublicNetmask(nic.getNetmask());
+                elbVm.setPublicIpAddress(nic.getIPv4Address());
+                elbVm.setPublicNetmask(nic.getIPv4Netmask());
                 elbVm.setPublicMacAddress(nic.getMacAddress());
             } else if (nic.getTrafficType() == TrafficType.Control) {
-                elbVm.setPrivateIpAddress(nic.getIp4Address());
+                elbVm.setPrivateIpAddress(nic.getIPv4Address());
                 elbVm.setPrivateMacAddress(nic.getMacAddress());
             }
         }
@@ -533,14 +534,14 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
             // TODO this is a ugly to test hypervisor type here
             // for basic network mode, we will use the guest NIC for control NIC
             for (NicProfile nic : profile.getNics()) {
-                if (nic.getTrafficType() == TrafficType.Guest && nic.getIp4Address() != null) {
+                if (nic.getTrafficType() == TrafficType.Guest && nic.getIPv4Address() != null) {
                     controlNic = nic;
                     guestNetworkId = nic.getNetworkId();
                 }
             }
         } else {
             for (NicProfile nic : profile.getNics()) {
-                if (nic.getTrafficType() == TrafficType.Control && nic.getIp4Address() != null) {
+                if (nic.getTrafficType() == TrafficType.Control && nic.getIPv4Address() != null) {
                     controlNic = nic;
                 } else if (nic.getTrafficType() == TrafficType.Guest) {
                     guestNetworkId = nic.getNetworkId();
@@ -553,7 +554,7 @@ public class ElasticLoadBalancerManagerImpl extends ManagerBase implements Elast
             return false;
         }
 
-        cmds.addCommand("checkSsh", new CheckSshCommand(profile.getInstanceName(), controlNic.getIp4Address(), 3922));
+        cmds.addCommand("checkSsh", new CheckSshCommand(profile.getInstanceName(), controlNic.getIPv4Address(), 3922));
 
         // Re-apply load balancing rules
         List<LoadBalancerVO> lbs = _elbVmMapDao.listLbsForElbVm(elbVm.getId());

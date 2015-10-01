@@ -190,6 +190,22 @@ public class VolumeDaoImpl extends GenericDaoBase<VolumeVO, Long> implements Vol
     }
 
     @Override
+    public List<VolumeVO> findByPod(long podId) {
+        SearchCriteria<VolumeVO> sc = AllFieldsSearch.create();
+        sc.setParameters("pod", podId);
+
+        return listBy(sc);
+    }
+
+    @Override
+    public List<VolumeVO> findByDc(long dcId) {
+        SearchCriteria<VolumeVO> sc = AllFieldsSearch.create();
+        sc.setParameters("dcId", dcId);
+
+        return listBy(sc);
+    }
+
+    @Override
     public List<VolumeVO> findByAccountAndPod(long accountId, long podId) {
         SearchCriteria<VolumeVO> sc = AllFieldsSearch.create();
         sc.setParameters("accountId", accountId);
@@ -306,6 +322,7 @@ public class VolumeDaoImpl extends GenericDaoBase<VolumeVO, Long> implements Vol
         AllFieldsSearch = createSearchBuilder();
         AllFieldsSearch.and("state", AllFieldsSearch.entity().getState(), Op.EQ);
         AllFieldsSearch.and("accountId", AllFieldsSearch.entity().getAccountId(), Op.EQ);
+        AllFieldsSearch.and("dcId", AllFieldsSearch.entity().getDataCenterId(), Op.EQ);
         AllFieldsSearch.and("pod", AllFieldsSearch.entity().getPodId(), Op.EQ);
         AllFieldsSearch.and("instanceId", AllFieldsSearch.entity().getInstanceId(), Op.EQ);
         AllFieldsSearch.and("deviceId", AllFieldsSearch.entity().getDeviceId(), Op.EQ);
@@ -386,6 +403,7 @@ public class VolumeDaoImpl extends GenericDaoBase<VolumeVO, Long> implements Vol
         primaryStorageSearch2.cp();
         primaryStorageSearch2.and("displayVolume", primaryStorageSearch2.entity().isDisplayVolume(), Op.EQ);
         primaryStorageSearch2.and("isRemoved", primaryStorageSearch2.entity().getRemoved(), Op.NULL);
+        primaryStorageSearch2.done();
 
         secondaryStorageSearch = createSearchBuilder(SumCount.class);
         secondaryStorageSearch.select("sum", Func.SUM, secondaryStorageSearch.entity().getSize());
@@ -625,6 +643,7 @@ public class VolumeDaoImpl extends GenericDaoBase<VolumeVO, Long> implements Vol
             destVol.setInstanceId(instanceId);
             update(srcVolId, srcVol);
             update(destVolId, destVol);
+            _tagsDao.updateResourceId(srcVolId, destVolId, ResourceObjectType.Volume);
         } catch (Exception e) {
             throw new CloudRuntimeException("Unable to persist the sequence number for this host");
         }

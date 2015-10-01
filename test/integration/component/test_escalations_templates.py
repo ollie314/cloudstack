@@ -22,7 +22,8 @@ from marvin.lib.utils import (cleanup_resources,
 from marvin.lib.base import (Account,
                              Zone,
                              Template,
-                             Hypervisor)
+                             Hypervisor,
+                             ServiceOffering)
 from marvin.lib.common import (get_domain,
                                get_zone,
                                get_template,
@@ -55,10 +56,16 @@ class TestTemplates(cloudstackTestCase):
             cls.hypervisor = cls.testClient.getHypervisorInfo()
             cls.services['mode'] = cls.zone.networktype
 
+            cls.mgtSvrDetails = cls.config.__dict__["mgtSvr"][0].__dict__
+
             builtin_info = get_builtin_template_info(cls.api_client, cls.zone.id)
             cls.services["privatetemplate"]["url"] = builtin_info[0]
             cls.services["privatetemplate"]["hypervisor"] = builtin_info[1]
             cls.services["privatetemplate"]["format"] = builtin_info[2]
+            cls.services["templates"]["url"] = builtin_info[0]
+            cls.services["templates"]["hypervisor"] = builtin_info[1]
+            cls.services["templates"]["format"] = builtin_info[2]
+
         except Exception as e:
             cls.tearDownClass()
             raise Exception("Warning: Exception in setup : %s" % e)
@@ -69,9 +76,9 @@ class TestTemplates(cloudstackTestCase):
         self.apiClient = self.testClient.getApiClient()
         self.cleanup = []
         self.account = Account.create(
-                self.apiClient,
-                self.services["account"],
-                domainid=self.domain.id
+            self.apiClient,
+            self.services["account"],
+            domainid=self.domain.id
         )
         # Getting authentication for user in newly created Account
         self.user = self.account.user[0]
@@ -915,3 +922,6 @@ class TestTemplates(cloudstackTestCase):
             )
         del self.services["privatetemplate"]["ostype"]
         return
+
+
+

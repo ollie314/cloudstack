@@ -17,6 +17,7 @@
 package com.cloud.storage;
 
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +28,7 @@ import java.util.UUID;
 
 import javax.inject.Inject;
 
+import com.cloud.user.User;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -40,8 +42,10 @@ import org.apache.cloudstack.acl.ControlledEntity;
 import org.apache.cloudstack.acl.SecurityChecker.AccessType;
 import org.apache.cloudstack.api.command.user.volume.DetachVolumeCmd;
 import org.apache.cloudstack.context.CallContext;
+import org.apache.cloudstack.engine.subsystem.api.storage.SnapshotInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
+import org.apache.cloudstack.engine.subsystem.api.storage.VolumeService;
 import org.apache.cloudstack.framework.jobs.AsyncJobExecutionContext;
 import org.apache.cloudstack.framework.jobs.AsyncJobManager;
 import org.apache.cloudstack.framework.jobs.dao.AsyncJobJoinMapDao;
@@ -50,6 +54,7 @@ import org.apache.cloudstack.storage.datastore.db.PrimaryDataStoreDao;
 import org.apache.cloudstack.storage.datastore.db.StoragePoolVO;
 
 import com.cloud.exception.InvalidParameterValueException;
+import com.cloud.exception.ResourceAllocationException;
 import com.cloud.hypervisor.Hypervisor.HypervisorType;
 import com.cloud.storage.dao.VolumeDao;
 import com.cloud.user.Account;
@@ -86,6 +91,12 @@ public class VolumeApiServiceImplTest {
 
     @Mock
     VMInstanceDao _vmInstanceDao;
+    @Mock
+    VolumeInfo volumeInfoMock;
+    @Mock
+    SnapshotInfo snapshotInfoMock;
+    @Mock
+    VolumeService volService;
 
     DetachVolumeCmd detachCmd = new DetachVolumeCmd();
     Class<?> _detachCmdClass = detachCmd.getClass();
@@ -102,10 +113,11 @@ public class VolumeApiServiceImplTest {
         _svc._vmInstanceDao = _vmInstanceDao;
         _svc._jobMgr = _jobMgr;
         _svc.volFactory = _volFactory;
+        _svc.volService = volService;
 
         // mock caller context
         AccountVO account = new AccountVO("admin", 1L, "networkDomain", Account.ACCOUNT_TYPE_NORMAL, "uuid");
-        UserVO user = new UserVO(1, "testuser", "password", "firstname", "lastName", "email", "timezone", UUID.randomUUID().toString());
+        UserVO user = new UserVO(1, "testuser", "password", "firstname", "lastName", "email", "timezone", UUID.randomUUID().toString(), User.Source.UNKNOWN);
         CallContext.register(user, account);
         // mock async context
         AsyncJobExecutionContext context = new AsyncJobExecutionContext();
@@ -122,7 +134,7 @@ public class VolumeApiServiceImplTest {
             when(_svc._volsDao.findById(1L)).thenReturn(volumeOfRunningVm);
 
             UserVmVO runningVm = new UserVmVO(1L, "vm", "vm", 1, HypervisorType.XenServer, 1L, false,
-                    false, 1L, 1L, 1L, null, "vm", null);
+                    false, 1L, 1L, 1, 1L, null, "vm", null);
             runningVm.setState(State.Running);
             runningVm.setDataCenterId(1L);
             when(_svc._userVmDao.findById(1L)).thenReturn(runningVm);
@@ -134,7 +146,7 @@ public class VolumeApiServiceImplTest {
             when(_svc._volsDao.findById(2L)).thenReturn(volumeOfStoppedVm);
 
             UserVmVO stoppedVm = new UserVmVO(2L, "vm", "vm", 1, HypervisorType.XenServer, 1L, false,
-                    false, 1L, 1L, 1L, null, "vm", null);
+                    false, 1L, 1L, 1, 1L, null, "vm", null);
             stoppedVm.setState(State.Stopped);
             stoppedVm.setDataCenterId(1L);
             when(_svc._userVmDao.findById(2L)).thenReturn(stoppedVm);
@@ -142,7 +154,7 @@ public class VolumeApiServiceImplTest {
 
             // volume of hyperV vm id=3
             UserVmVO hyperVVm = new UserVmVO(3L, "vm", "vm", 1, HypervisorType.Hyperv, 1L, false,
-                    false, 1L, 1L, 1L, null, "vm", null);
+                    false, 1L, 1L, 1, 1L, null, "vm", null);
             hyperVVm.setState(State.Stopped);
             hyperVVm.setDataCenterId(1L);
             when(_svc._userVmDao.findById(3L)).thenReturn(hyperVVm);
@@ -199,7 +211,7 @@ public class VolumeApiServiceImplTest {
 
             // vm having root volume
             UserVmVO vmHavingRootVolume = new UserVmVO(4L, "vm", "vm", 1, HypervisorType.XenServer, 1L, false,
-                    false, 1L, 1L, 1L, null, "vm", null);
+                    false, 1L, 1L, 1, 1L, null, "vm", null);
             vmHavingRootVolume.setState(State.Stopped);
             vmHavingRootVolume.setDataCenterId(1L);
             when(_svc._userVmDao.findById(4L)).thenReturn(vmHavingRootVolume);
@@ -324,6 +336,23 @@ public class VolumeApiServiceImplTest {
     public void attachRootVolumePositive() throws NoSuchFieldException, IllegalAccessException {
         thrown.expect(NullPointerException.class);
         _svc.attachVolumeToVM(2L, 6L, 0L);
+    }
+
+    // volume not Ready
+    @Test(expected = InvalidParameterValueException.class)
+    public void testTakeSnapshotF1() throws ResourceAllocationException {
+        when(_volFactory.getVolume(anyLong())).thenReturn(volumeInfoMock);
+        when(volumeInfoMock.getState()).thenReturn(Volume.State.Allocated);
+        _svc.takeSnapshot(5L, Snapshot.MANUAL_POLICY_ID, 3L, null, false);
+    }
+
+    @Test
+    public void testTakeSnapshotF2() throws ResourceAllocationException {
+        when(_volFactory.getVolume(anyLong())).thenReturn(volumeInfoMock);
+        when(volumeInfoMock.getState()).thenReturn(Volume.State.Ready);
+        when(volumeInfoMock.getInstanceId()).thenReturn(null);
+        when (volService.takeSnapshot(Mockito.any(VolumeInfo.class))).thenReturn(snapshotInfoMock);
+        _svc.takeSnapshot(5L, Snapshot.MANUAL_POLICY_ID, 3L, null, false);
     }
 
     @After

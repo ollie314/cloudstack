@@ -181,7 +181,8 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
     private static final Logger s_accessLogger = Logger.getLogger("apiserver." + ApiServer.class.getName());
 
     public static boolean encodeApiResponse = false;
-    public static String jsonContentType = "text/javascript";
+    public static boolean s_enableSecureCookie = false;
+    public static String s_jsonContentType = HttpUtils.JSON_CONTENT_TYPE;
 
     /**
      * Non-printable ASCII characters - numbers 0 to 31 and 127 decimal
@@ -276,11 +277,10 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
             }
         }
         // For some reason, the instanceType / instanceId are not abstract, which means we may get null values.
-        org.apache.cloudstack.framework.events.Event event = new org.apache.cloudstack.framework.events.Event(
-                "management-server",
-                EventCategory.ASYNC_JOB_CHANGE_EVENT.getName(),
-                jobEvent,
-                (job.getInstanceType() != null ? job.getInstanceType().toString() : "unknown"), null);
+        String instanceType = job.getInstanceType() != null ? job.getInstanceType() : "unknown";
+        String instanceUuid = job.getInstanceId() != null ? ApiDBUtils.findJobInstanceUuid(job) : "";
+        org.apache.cloudstack.framework.events.Event event = new org.apache.cloudstack.framework.events.Event("management-server", EventCategory.ASYNC_JOB_CHANGE_EVENT.getName(),
+                jobEvent, instanceType, instanceUuid);
 
         Map<String, String> eventDescription = new HashMap<String, String>();
         eventDescription.put("command", job.getCmd());
@@ -288,8 +288,8 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
         eventDescription.put("account", jobOwner.getUuid());
         eventDescription.put("processStatus", "" + job.getProcessStatus());
         eventDescription.put("resultCode", "" + job.getResultCode());
-        eventDescription.put("instanceUuid", (job.getInstanceId() != null ? ApiDBUtils.findJobInstanceUuid(job) : "" ) );
-        eventDescription.put("instanceType", (job.getInstanceType() != null ? job.getInstanceType().toString() : "unknown"));
+        eventDescription.put("instanceUuid", instanceUuid);
+        eventDescription.put("instanceType", instanceType);
         eventDescription.put("commandEventType", cmdEventType);
         eventDescription.put("jobId", job.getUuid());
         eventDescription.put("jobResult", job.getResult());
@@ -362,9 +362,13 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
         }
 
         setEncodeApiResponse(Boolean.valueOf(_configDao.getValue(Config.EncodeApiResponse.key())));
-        final String jsonType = _configDao.getValue(Config.JavaScriptDefaultContentType.key());
+        final String jsonType = _configDao.getValue(Config.JSONDefaultContentType.key());
         if (jsonType != null) {
-            jsonContentType = jsonType;
+            s_jsonContentType = jsonType;
+        }
+        final Boolean enableSecureSessionCookie = Boolean.valueOf(_configDao.getValue(Config.EnableSecureSessionCookie.key()));
+        if (enableSecureSessionCookie != null) {
+            s_enableSecureCookie = enableSecureSessionCookie;
         }
 
         if (apiPort != null) {
@@ -633,7 +637,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
                 params.put("id", objectId.toString());
                 Class entityClass = EventTypes.getEntityClassForEvent(createCmd.getEventType());
                 if (entityClass != null)
-                    ctx.putContextParameter(entityClass.getName(), objectUuid);
+                    ctx.putContextParameter(entityClass, objectUuid);
             } else {
                 // Extract the uuid before params are processed and id reflects internal db id
                 objectUuid = params.get(ApiConstants.ID);
@@ -1057,8 +1061,8 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
             final SecureRandom sesssionKeyRandom = new SecureRandom();
             final byte sessionKeyBytes[] = new byte[20];
             sesssionKeyRandom.nextBytes(sessionKeyBytes);
-            final String sessionKey = Base64.encodeBase64String(sessionKeyBytes);
-            session.setAttribute("sessionkey", sessionKey);
+            final String sessionKey = Base64.encodeBase64URLSafeString(sessionKeyBytes);
+            session.setAttribute(ApiConstants.SESSIONKEY, sessionKey);
 
             return createLoginResponse(session);
         }
@@ -1136,7 +1140,7 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
             final BasicHttpEntity body = new BasicHttpEntity();
             if (HttpUtils.RESPONSE_TYPE_JSON.equalsIgnoreCase(responseType)) {
                 // JSON response
-                body.setContentType(jsonContentType);
+                body.setContentType(getJSONContentType());
                 if (responseText == null) {
                     body.setContent(new ByteArrayInputStream("{ \"error\" : { \"description\" : \"Internal Server Error\" } }".getBytes(HttpUtils.UTF_8)));
                 }
@@ -1367,7 +1371,11 @@ public class ApiServer extends ManagerBase implements HttpRequestHandler, ApiSer
         ApiServer.encodeApiResponse = encodeApiResponse;
     }
 
-    public static String getJsonContentType() {
-        return jsonContentType;
+    public static boolean isSecureSessionCookieEnabled() {
+        return s_enableSecureCookie;
+    }
+
+    public static String getJSONContentType() {
+        return s_jsonContentType;
     }
 }

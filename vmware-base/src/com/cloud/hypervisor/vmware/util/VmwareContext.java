@@ -16,6 +16,27 @@
 // under the License.
 package com.cloud.hypervisor.vmware.util;
 
+import com.cloud.hypervisor.vmware.mo.DatacenterMO;
+import com.cloud.hypervisor.vmware.mo.DatastoreFile;
+import com.cloud.utils.ActionDelegate;
+import com.cloud.utils.StringUtils;
+import com.vmware.vim25.ManagedObjectReference;
+import com.vmware.vim25.ObjectContent;
+import com.vmware.vim25.ObjectSpec;
+import com.vmware.vim25.PropertyFilterSpec;
+import com.vmware.vim25.PropertySpec;
+import com.vmware.vim25.ServiceContent;
+import com.vmware.vim25.TaskInfo;
+import com.vmware.vim25.TraversalSpec;
+import com.vmware.vim25.VimPortType;
+import org.apache.cloudstack.utils.security.SSLUtils;
+import org.apache.cloudstack.utils.security.SecureSSLSocketFactory;
+import org.apache.log4j.Logger;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSession;
+import javax.xml.ws.soap.SOAPFaultException;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
@@ -30,32 +51,11 @@ import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLSession;
-import javax.xml.ws.soap.SOAPFaultException;
-
-import org.apache.log4j.Logger;
-import org.apache.cloudstack.utils.security.SSLUtils;
-
-import com.vmware.vim25.ManagedObjectReference;
-import com.vmware.vim25.ObjectContent;
-import com.vmware.vim25.ObjectSpec;
-import com.vmware.vim25.PropertyFilterSpec;
-import com.vmware.vim25.PropertySpec;
-import com.vmware.vim25.ServiceContent;
-import com.vmware.vim25.TaskInfo;
-import com.vmware.vim25.TraversalSpec;
-import com.vmware.vim25.VimPortType;
-
-import com.cloud.hypervisor.vmware.mo.DatacenterMO;
-import com.cloud.hypervisor.vmware.mo.DatastoreFile;
-import com.cloud.utils.ActionDelegate;
 
 public class VmwareContext {
     private static final Logger s_logger = Logger.getLogger(VmwareContext.class);
@@ -82,7 +82,7 @@ public class VmwareContext {
             trustAllCerts[0] = tm;
             javax.net.ssl.SSLContext sc = SSLUtils.getSSLContext();
             sc.init(null, trustAllCerts, null);
-            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(new SecureSSLSocketFactory(sc));
 
             HostnameVerifier hv = new HostnameVerifier() {
                 @Override
@@ -359,7 +359,7 @@ public class VmwareContext {
             }
             out.flush();
 
-            br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+            br = new BufferedReader(new InputStreamReader(conn.getInputStream(), getCharSetFromConnection(conn)));
             String line;
             while ((line = br.readLine()) != null) {
                 if (s_logger.isTraceEnabled())
@@ -375,6 +375,18 @@ public class VmwareContext {
             if (br != null)
                 br.close();
         }
+    }
+
+    private Charset getCharSetFromConnection(HttpURLConnection conn) {
+        String charsetName = conn.getContentEncoding();
+        Charset charset;
+        try {
+            charset = Charset.forName(charsetName);
+        } catch (IllegalArgumentException e) {
+            s_logger.warn("Illegal/unsupported/null charset name from connection. charsetname from connection is " + charsetName);
+            charset = StringUtils.getPreferredCharset();
+        }
+        return charset;
     }
 
     public void uploadVmdkFile(String httpMethod, String urlString, String localFileName, long totalBytesUpdated, ActionDelegate<Long> progressUpdater) throws Exception {
@@ -485,9 +497,9 @@ public class VmwareContext {
         out.write(content);
         out.flush();
 
-        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), getCharSetFromConnection(conn)));
         String line;
-        while ((line = in.readLine()) != null) {
+        while ((in.ready()) && (line = in.readLine()) != null) {
             if (s_logger.isTraceEnabled())
                 s_logger.trace("Upload " + urlString + " response: " + line);
         }
@@ -552,7 +564,7 @@ public class VmwareContext {
      */
     public String[] listDatastoreDirContent(String urlString) throws Exception {
         List<String> fileList = new ArrayList<String>();
-        String content = new String(getResourceContent(urlString));
+        String content = new String(getResourceContent(urlString),"UTF-8");
         String marker = "</a></td><td ";
         int parsePos = -1;
         do {
@@ -634,6 +646,7 @@ public class VmwareContext {
                 try {
                     Thread.sleep(CONNECT_RETRY_INTERVAL);
                 } catch (InterruptedException ex) {
+                    s_logger.debug("[ignored] interupted while connecting.");
                 }
             }
         }

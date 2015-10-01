@@ -57,6 +57,8 @@ import com.cloud.uservm.UserVm;
 import com.cloud.utils.exception.ExecutionException;
 
 public interface UserVmService {
+
+
     /**
      * Destroys one virtual machine
      *

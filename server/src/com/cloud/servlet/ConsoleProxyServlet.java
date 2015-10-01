@@ -228,12 +228,14 @@ public class ConsoleProxyServlet extends HttpServlet {
         try {
             w = Integer.parseInt(value);
         } catch (NumberFormatException e) {
+            s_logger.info("[ignored] not a number: " + value);
         }
 
         value = req.getParameter("h");
         try {
             h = Integer.parseInt(value);
         } catch (NumberFormatException e) {
+            s_logger.info("[ignored] not a number: " + value);
         }
 
         try {
@@ -317,7 +319,7 @@ public class ConsoleProxyServlet extends HttpServlet {
 
         String sid = req.getParameter("sid");
         if (sid == null || !sid.equals(vm.getVncPassword())) {
-            s_logger.warn("sid " + sid + " in url does not match stored sid " + vm.getVncPassword());
+            s_logger.warn("sid " + sid + " in url does not match stored sid.");
             sendResponse(resp, "failed");
             return;
         }

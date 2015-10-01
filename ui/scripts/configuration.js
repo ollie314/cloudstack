@@ -137,7 +137,7 @@
                                         }
                                     },
                                     isCustomized: {
-                                        label: 'label.custom',                                       
+                                        label: 'label.custom',
                                         isBoolean: true,
                                         isReverse: true,
                                         isChecked: false
@@ -359,8 +359,8 @@
                                         }
                                     },
                                     hostTags: { //Only one single host tag is supported at server-side. Multiple host tags are NOT supported at server-side.
-                                        label: 'Host Tag',
-                                        docID: 'helpComputeOfferingHostTags'                                        
+                                        label: 'label.host.tag',
+                                        docID: 'helpComputeOfferingHostTags'
                                     },
                                     cpuCap: {
                                         label: 'label.CPU.cap',
@@ -410,7 +410,7 @@
                                                         var $fields = $form.find('.field');
                                                         if ($(this).val() == "ImplicitDedicationPlanner") {
                                                             $form.find('[rel=plannerMode]').css('display', 'block');
-                                                        } else {	
+                                                        } else {
                                                             $form.find('[rel=plannerMode]').hide();
                                                         }
                                                     });
@@ -573,6 +573,9 @@
                                                             description: this.path
                                                         });
                                                     });
+                                                    items.sort(function(a, b) {
+                                                        return a.description.localeCompare(b.description);
+                                                    });
                                                     args.response.success({
                                                         data: items
                                                     });
@@ -593,9 +596,9 @@
                                     provisioningType :args.data.provisioningType,
                                     customized: (args.data.isCustomized == "on")
                                 };
-                                
+
                                 //custom fields (begin)
-                                if (args.data.isCustomized != "on") {      
+                                if (args.data.isCustomized != "on") {
                                     $.extend(data, {
                                         cpuNumber: args.data.cpuNumber
                                     });
@@ -605,9 +608,9 @@
                                     $.extend(data, {
                                         memory: args.data.memory
                                     });
-                                }      
+                                }
                                 //custom fields (end)
-                                
+
                                 if (args.data.deploymentPlanner != null && args.data.deploymentPlanner.length > 0) {
                                     $.extend(data, {
                                         deploymentplanner: args.data.deploymentPlanner
@@ -755,7 +758,7 @@
                             success: function(json) {
                                 var items = json.listserviceofferingsresponse.serviceoffering;
                                 args.response.success({
-                                    actionFitler: serviceOfferingActionfilter,
+                                    actionFilter: serviceOfferingActionfilter,
                                     data: items
                                 });
                             },
@@ -766,7 +769,7 @@
                     },
 
                     detailView: {
-                        name: 'Service offering details',
+                        name: 'label.service.offering.details',
                         actions: {
                             edit: {
                                 label: 'label.edit',
@@ -869,7 +872,7 @@
                                         converter: function(args) {
                                             if (args == undefined)
                                                 return '';
-                                            else                                        
+                                            else
                                                 return cloudStack.converters.convertBytes(args * 1024 * 1024);
                                         }
                                     },
@@ -933,10 +936,10 @@
                                     },
                                     deploymentplanner: {
                                         label: 'label.deployment.planner'
-                                    },                                    
+                                    },
                                     plannerMode: {
                                         label: 'label.planner.mode'
-                                    },                                    
+                                    },
                                     pciDevice: {
                                         label: 'label.gpu'
                                     },
@@ -947,7 +950,7 @@
                                         label: 'label.storage.tags'
                                     },
                                     hosttags: {
-                                        label: 'Host Tag'
+                                        label: 'label.host.tag'
                                     },
                                     domain: {
                                         label: 'label.domain'
@@ -969,20 +972,20 @@
                                         async: true,
                                         success: function(json) {
                                             var item = json.listserviceofferingsresponse.serviceoffering[0];
-                                            
+
                                             if (item.deploymentplanner != null && item.serviceofferingdetails != null) {
                                                 if (item.deploymentplanner == 'ImplicitDedicationPlanner' && item.serviceofferingdetails.ImplicitDedicationMode != null) {
                                                     item.plannerMode = item.serviceofferingdetails.ImplicitDedicationMode;
                                                 }
                                             }
-                                                                                       
+
                                             if (item.serviceofferingdetails != null) {
                                                 item.pciDevice = item.serviceofferingdetails.pciDevice;
                                                 item.vgpuType = item.serviceofferingdetails.vgpuType;
                                             }
 
                                             args.response.success({
-                                                actionFitler: serviceOfferingActionfilter,
+                                                actionFilter: serviceOfferingActionfilter,
                                                 data: item
                                             });
                                         }
@@ -1220,6 +1223,9 @@
                                                             description: this.path
                                                         });
                                                     });
+                                                    items.sort(function(a, b) {
+                                                        return a.description.localeCompare(b.description);
+                                                    });
                                                     args.response.success({
                                                         data: items
                                                     });
@@ -1343,7 +1349,7 @@
                     },
 
                     detailView: {
-                        name: 'System service offering details',
+                        name: 'label.system.service.offering.details',
                         actions: {
                             edit: {
                                 label: 'label.edit',
@@ -1463,7 +1469,7 @@
                                         converter: function(args) {
                                             if (args == undefined)
                                                 return '';
-                                            else 
+                                            else
                                                 return cloudStack.converters.convertBytes(args * 1024 * 1024);
                                         }
                                     },
@@ -1516,7 +1522,7 @@
                                         success: function(json) {
                                             var item = json.listserviceofferingsresponse.serviceoffering[0];
                                             args.response.success({
-                                                actionFitler: systemServiceOfferingActionfilter,
+                                                actionFilter: systemServiceOfferingActionfilter,
                                                 data: item
                                             });
                                         }
@@ -1893,6 +1899,9 @@
                                                             description: this.path
                                                         });
                                                     });
+                                                    items.sort(function(a, b) {
+                                                        return a.description.localeCompare(b.description);
+                                                    });
                                                     args.response.success({
                                                         data: items
                                                     });
@@ -1915,7 +1924,7 @@
                                     customized: (args.data.isCustomized == "on")
                                 };
 
-                                if (args.data.isCustomized != "on") {  
+                                if (args.data.isCustomized != "on") {
                                     $.extend(data, {
                                         disksize: args.data.disksize
                                     });
@@ -2009,7 +2018,7 @@
                     },
 
                     detailView: {
-                        name: 'Disk offering details',
+                        name: 'label.disk.offering.details',
                         actions: {
                             edit: {
                                 label: 'label.edit',
@@ -2148,7 +2157,7 @@
                                         label: 'label.disk.iops.write.rate'
                                     },
                                     cacheMode: {
-                                        label: 'label.cache.mode',
+                                        label: 'label.cache.mode'
                                     },
                                     tags: {
                                         label: 'label.storage.tags'
@@ -2286,7 +2295,7 @@
                                         //p.s. Netscaler is supported in both vpc and non-vpc
                                         if ($useVpc.is(':visible') && $useVpcCb.is(':checked')) { //*** vpc ***
                                             $optionsOfProviders.each(function(index) {
-                                                if ($(this).val() == 'InternalLbVm' || $(this).val() == 'VpcVirtualRouter' || $(this).val() == 'Netscaler'  || $(this).val() == 'NuageVsp' || $(this).val() == 'NuageVspVpc') {
+                                                if ($(this).val() == 'InternalLbVm' || $(this).val() == 'VpcVirtualRouter' || $(this).val() == 'Netscaler'  || $(this).val() == 'NuageVsp' || $(this).val() == 'NuageVspVpc' || $(this).val() == 'BigSwitchBcf') {
                                                     $(this).attr('disabled', false);
                                                 } else {
                                                     $(this).attr('disabled', true);
@@ -2547,7 +2556,7 @@
                                             args.$form.find('.form-item[rel=\"service.StaticNat.associatePublicIP\"]').hide();
                                             args.$form.find('.form-item[rel=\"service.StaticNat.associatePublicIP\"]').find('input[type=checkbox]').attr('checked', false);
                                         }
-                                        
+
                                         //StretchedL2Subnet checkbox should be displayed only when 'Connectivity' service is checked
                                         if (args.$form.find('.form-item[rel=\"service.Connectivity.isEnabled\"]').find('input[type=checkbox]').is(':checked')) {
                                             $supportsstrechedl2subnet.css('display', 'inline-block');
@@ -3036,8 +3045,8 @@
                                             inputData['servicecapabilitylist[' + serviceCapabilityIndex + '].capabilitytype'] = 'lbSchemes';
                                             inputData['servicecapabilitylist[' + serviceCapabilityIndex + '].capabilityvalue'] = 'internal';
                                             serviceCapabilityIndex++;
-                                        } 
-                                    } else if (value != '') { // normal data (serviceData.length ==1), e.g. "name", "displayText", "networkRate", "guestIpType", "lbType" (unwanted), "availability" (unwated when value is "Optional"), "egressdefaultpolicy", "state" (unwanted), "status" (unwanted), "allocationstate" (unwanted) 
+                                        }
+                                    } else if (value != '') { // normal data (serviceData.length ==1), e.g. "name", "displayText", "networkRate", "guestIpType", "lbType" (unwanted), "availability" (unwated when value is "Optional"), "egressdefaultpolicy", "state" (unwanted), "status" (unwanted), "allocationstate" (unwanted)
                                         if (!(key ==  "lbType"  || (key == "availability" && value == "Optional") || key == "state" || key == "status" || key == "allocationstate" || key == "useVpc" )) {
                                         inputData[key] = value;
                                     }
@@ -3088,21 +3097,21 @@
                                 if (inputData['guestIpType'] == "Shared") { //specifyVlan checkbox is disabled, so inputData won't include specifyVlan
                                     inputData['specifyVlan'] = true; //hardcode inputData['specifyVlan']
                                     inputData['specifyIpRanges'] = true;
-                                    delete inputData.isPersistent; //if Persistent checkbox is unchecked, do not pass isPersistent parameter to API call since we need to keep API call's size as small as possible (p.s. isPersistent is defaulted as false at server-side)                                          
+                                    delete inputData.isPersistent; //if Persistent checkbox is unchecked, do not pass isPersistent parameter to API call since we need to keep API call's size as small as possible (p.s. isPersistent is defaulted as false at server-side)
                                 } else if (inputData['guestIpType'] == "Isolated") { //specifyVlan checkbox is shown
                                     //inputData['specifyIpRanges'] = false;
-                                    delete inputData.specifyIpRanges; //if specifyIpRanges should be false, do not pass specifyIpRanges parameter to API call since we need to keep API call's size as small as possible (p.s. specifyIpRanges is defaulted as false at server-side)                                          
+                                    delete inputData.specifyIpRanges; //if specifyIpRanges should be false, do not pass specifyIpRanges parameter to API call since we need to keep API call's size as small as possible (p.s. specifyIpRanges is defaulted as false at server-side)
 
                                     if (inputData['specifyVlan'] == 'on') { //specifyVlan checkbox is checked
-                                        inputData['specifyVlan'] = true;                                        
+                                        inputData['specifyVlan'] = true;
                                     } else { //specifyVlan checkbox is unchecked
-                                        delete inputData.specifyVlan; //if specifyVlan checkbox is unchecked, do not pass specifyVlan parameter to API call since we need to keep API call's size as small as possible (p.s. specifyVlan is defaulted as false at server-side)                                        
+                                        delete inputData.specifyVlan; //if specifyVlan checkbox is unchecked, do not pass specifyVlan parameter to API call since we need to keep API call's size as small as possible (p.s. specifyVlan is defaulted as false at server-side)
                                     }
 
                                     if (inputData['isPersistent'] == 'on') { //It is a persistent network
                                         inputData['isPersistent'] = true;
                                     } else { //Isolated Network with Non-persistent network
-                                        delete inputData.isPersistent; //if Persistent checkbox is unchecked, do not pass isPersistent parameter to API call since we need to keep API call's size as small as possible (p.s. isPersistent is defaulted as false at server-side)                                          
+                                        delete inputData.isPersistent; //if Persistent checkbox is unchecked, do not pass isPersistent parameter to API call since we need to keep API call's size as small as possible (p.s. isPersistent is defaulted as false at server-side)
                                     }
                                 }
 
@@ -3177,7 +3186,7 @@
                     reorder: cloudStack.api.actions.sort('updateNetworkOffering', 'networkOfferings'),
 
                     detailView: {
-                        name: 'Network offering details',
+                        name: 'label.network.offering.details',
                         actions: {
                             edit: {
                                 label: 'label.edit',
@@ -3578,25 +3587,29 @@
                                             });
                                             networkServiceObjs.push({
                                                 name: 'Gateway',
-                                                provider: [{name: 'VpcVirtualRouter'}]
+                                                provider: [{name: 'VpcVirtualRouter'},
+                                                           {name: 'BigSwitchBcf'}]
                                             });
                                             networkServiceObjs.push({
                                                 name: 'StaticNat',
                                                 provider: [
                                                        {name: 'VpcVirtualRouter'},
-                                                       {name: 'NuageVsp'}]
+                                                       {name: 'NuageVsp'},
+                                                       {name: 'BigSwitchBcf'}]
                                             });
                                             networkServiceObjs.push({
                                                 name: 'SourceNat',
                                                 provider: [
                                                        {name: 'VpcVirtualRouter'},
-                                                       {name: 'NuageVsp'}]
+                                                       {name: 'NuageVsp'},
+                                                       {name: 'BigSwitchBcf'}]
                                             });
                                             networkServiceObjs.push({
                                                 name: 'NetworkACL',
                                                 provider: [
                                                        {name: 'VpcVirtualRouter'},
-                                                       {name: 'NuageVsp'}]
+                                                       {name: 'NuageVsp'},
+                                                       {name: 'BigSwitchBcf'}]
                                             });
                                             networkServiceObjs.push({
                                                 name: 'PortForwarding',
@@ -3608,12 +3621,14 @@
                                             });
                                             networkServiceObjs.push({
                                                 name: 'Vpn',
-                                                provider: [{name: 'VpcVirtualRouter'}]
+                                                provider: [{name: 'VpcVirtualRouter'},
+                                                           {name: 'BigSwitchBcf'}]
                                             });
 
                                             networkServiceObjs.push({
                                                 name: 'Connectivity',
                                                 provider: [
+                                                    {name: 'BigSwitchBcf'},
                                                     {name: 'NiciraNvp'},
                                                     {name: 'Ovs'},
                                                     {name: 'JuniperContrailVpcRouter'},
@@ -3669,7 +3684,7 @@
 
                                                 fields[id.isEnabled] = {
                                                     label: serviceDisplayName,
-                                                    isBoolean: true,
+                                                    isBoolean: true
                                                 };
 
                                                 serviceFields.push(id.isEnabled);
@@ -3711,8 +3726,15 @@
                                         isHidden: true,
                                         dependsOn: 'service.Connectivity.isEnabled',
                                         isBoolean: true
+                                    },
+
+                                    "service.SourceNat.redundantRouterCapabilityCheckbox": {
+                                        label: 'label.redundant.router.capability',
+                                        isHidden: true,
+                                        dependsOn: 'service.SourceNat.isEnabled',
+                                        isBoolean: true
                                     }
-                                },//end of fields
+                                }//end of fields
                             }, //end of createForm
 
                             action: function(args) {
@@ -3720,10 +3742,8 @@
                                 var inputData = {};
                                 var serviceProviderMap = {};
                                 var serviceCapabilityIndex = 0;
-
                                 $.each(formData, function(key, value) {
                                     var serviceData = key.split('.');
-
                                     if (serviceData.length > 1) {
                                         if (serviceData[0] == 'service' &&
                                             serviceData[2] == 'isEnabled' &&
@@ -3742,7 +3762,13 @@
                                             inputData['servicecapabilitylist[' + serviceCapabilityIndex + '].capabilitytype'] = 'DistributedRouter';
                                             inputData['servicecapabilitylist[' + serviceCapabilityIndex + '].capabilityvalue'] = true;
                                             serviceCapabilityIndex++;
+                                        } else if ((key == 'service.SourceNat.redundantRouterCapabilityCheckbox') && ("SourceNat" in serviceProviderMap)) {
+                                            inputData['serviceCapabilityList[' + serviceCapabilityIndex + '].service'] = 'SourceNat';
+                                            inputData['serviceCapabilityList[' + serviceCapabilityIndex + '].capabilitytype'] = "RedundantRouter";
+                                            inputData['serviceCapabilityList[' + serviceCapabilityIndex + '].capabilityvalue'] = true;
+                                            serviceCapabilityIndex++;
                                         }
+
                                     } else if (value != '') { // Normal data
                                         inputData[key] = value;
                                     }
@@ -4086,5 +4112,5 @@
 
         return allowedActions;
     };
-    
+
 })(cloudStack, jQuery);

@@ -71,6 +71,7 @@ import org.apache.cloudstack.api.response.UserResponse;
 import org.apache.cloudstack.api.response.UserVmResponse;
 import org.apache.cloudstack.api.response.VolumeResponse;
 import org.apache.cloudstack.api.response.ZoneResponse;
+import org.apache.cloudstack.framework.config.ConfigKey;
 
 import com.cloud.exception.PermissionDeniedException;
 
@@ -80,60 +81,66 @@ import com.cloud.exception.PermissionDeniedException;
  */
 public interface QueryService {
 
-    public ListResponse<UserResponse> searchForUsers(ListUsersCmd cmd) throws PermissionDeniedException;
+    // Config keys
+    static final ConfigKey<Boolean> AllowUserViewDestroyedVM = new ConfigKey<Boolean>("Advanced", Boolean.class, "allow.user.view.destroyed.vm", "false",
+            "Determines whether users can view their destroyed or expunging vm ", true, ConfigKey.Scope.Account);
 
-    public ListResponse<EventResponse> searchForEvents(ListEventsCmd cmd);
+    ListResponse<UserResponse> searchForUsers(ListUsersCmd cmd) throws PermissionDeniedException;
 
-    public ListResponse<ResourceTagResponse> listTags(ListTagsCmd cmd);
+    ListResponse<EventResponse> searchForEvents(ListEventsCmd cmd);
 
-    public ListResponse<InstanceGroupResponse> searchForVmGroups(ListVMGroupsCmd cmd);
+    ListResponse<ResourceTagResponse> listTags(ListTagsCmd cmd);
 
-    public ListResponse<UserVmResponse> searchForUserVMs(ListVMsCmd cmd);
+    ListResponse<InstanceGroupResponse> searchForVmGroups(ListVMGroupsCmd cmd);
 
-    public ListResponse<SecurityGroupResponse> searchForSecurityGroups(ListSecurityGroupsCmd cmd);
+    ListResponse<UserVmResponse> searchForUserVMs(ListVMsCmd cmd);
 
-    public ListResponse<DomainRouterResponse> searchForRouters(ListRoutersCmd cmd);
+    ListResponse<SecurityGroupResponse> searchForSecurityGroups(ListSecurityGroupsCmd cmd);
 
-    public ListResponse<ProjectInvitationResponse> listProjectInvitations(ListProjectInvitationsCmd cmd);
+    ListResponse<DomainRouterResponse> searchForRouters(ListRoutersCmd cmd);
 
-    public ListResponse<ProjectResponse> listProjects(ListProjectsCmd cmd);
+    ListResponse<ProjectInvitationResponse> listProjectInvitations(ListProjectInvitationsCmd cmd);
 
-    public ListResponse<ProjectAccountResponse> listProjectAccounts(ListProjectAccountsCmd cmd);
+    ListResponse<ProjectResponse> listProjects(ListProjectsCmd cmd);
 
-    public ListResponse<HostResponse> searchForServers(ListHostsCmd cmd);
+    ListResponse<ProjectAccountResponse> listProjectAccounts(ListProjectAccountsCmd cmd);
 
-    public ListResponse<VolumeResponse> searchForVolumes(ListVolumesCmd cmd);
+    ListResponse<HostResponse> searchForServers(ListHostsCmd cmd);
 
-    public ListResponse<StoragePoolResponse> searchForStoragePools(ListStoragePoolsCmd cmd);
+    ListResponse<VolumeResponse> searchForVolumes(ListVolumesCmd cmd);
 
-    public ListResponse<ImageStoreResponse> searchForImageStores(ListImageStoresCmd cmd);
+    ListResponse<StoragePoolResponse> searchForStoragePools(ListStoragePoolsCmd cmd);
 
-    public ListResponse<ImageStoreResponse> searchForSecondaryStagingStores(ListSecondaryStagingStoresCmd cmd);
+    ListResponse<ImageStoreResponse> searchForImageStores(ListImageStoresCmd cmd);
 
-    public ListResponse<DomainResponse> searchForDomains(ListDomainsCmd cmd);
+    ListResponse<ImageStoreResponse> searchForSecondaryStagingStores(ListSecondaryStagingStoresCmd cmd);
 
-    public ListResponse<AccountResponse> searchForAccounts(ListAccountsCmd cmd);
+    ListResponse<DomainResponse> searchForDomains(ListDomainsCmd cmd);
 
-    public ListResponse<AsyncJobResponse>  searchForAsyncJobs(ListAsyncJobsCmd cmd);
+    ListResponse<AccountResponse> searchForAccounts(ListAccountsCmd cmd);
 
-    public ListResponse<DiskOfferingResponse>  searchForDiskOfferings(ListDiskOfferingsCmd cmd);
+    ListResponse<AsyncJobResponse>  searchForAsyncJobs(ListAsyncJobsCmd cmd);
 
-    public ListResponse<ServiceOfferingResponse>  searchForServiceOfferings(ListServiceOfferingsCmd cmd);
+    ListResponse<DiskOfferingResponse>  searchForDiskOfferings(ListDiskOfferingsCmd cmd);
 
-    public ListResponse<ZoneResponse>  listDataCenters(ListZonesCmd cmd);
+    ListResponse<ServiceOfferingResponse>  searchForServiceOfferings(ListServiceOfferingsCmd cmd);
 
-    public ListResponse<TemplateResponse> listTemplates(ListTemplatesCmd cmd);
+    ListResponse<ZoneResponse>  listDataCenters(ListZonesCmd cmd);
 
-    public ListResponse<TemplateResponse> listIsos(ListIsosCmd cmd);
+    ListResponse<TemplateResponse> listTemplates(ListTemplatesCmd cmd);
 
-    public ListResponse<AffinityGroupResponse> listAffinityGroups(Long affinityGroupId, String affinityGroupName,
+    ListResponse<TemplateResponse> listIsos(ListIsosCmd cmd);
+
+    ListResponse<AffinityGroupResponse> listAffinityGroups(Long affinityGroupId, String affinityGroupName,
             String affinityGroupType, Long vmId, String accountName, Long domainId, boolean isRecursive,
             boolean listAll, Long startIndex, Long pageSize, String keyword);
 
-    public List<ResourceDetailResponse> listResourceDetails(ListResourceDetailsCmd cmd);
+    List<ResourceDetailResponse> listResourceDetails(ListResourceDetailsCmd cmd);
 
     ListResponse<DomainRouterResponse> searchForInternalLbVms(ListInternalLBVMsCmd cmd);
-    public ListResponse<StorageTagResponse> searchForStorageTags(ListStorageTagsCmd cmd);
-    public ListResponse<HostTagResponse> searchForHostTags(ListHostTagsCmd cmd);
+
+    ListResponse<StorageTagResponse> searchForStorageTags(ListStorageTagsCmd cmd);
+
+    ListResponse<HostTagResponse> searchForHostTags(ListHostTagsCmd cmd);
 
 }

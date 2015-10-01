@@ -38,7 +38,8 @@ from marvin.lib.common import (get_domain,
                                get_template,
                                matchResourceCount,
                                createSnapshotFromVirtualMachineVolume,
-                               isVmExpunged)
+                               isVmExpunged,
+                               find_storage_pool_type)
 from marvin.lib.utils import (cleanup_resources,
                               validateList)
 from marvin.codes import (PASS,
@@ -63,6 +64,12 @@ class TestVolumeLimits(cloudstackTestCase):
         cls.domain = get_domain(cls.api_client)
         cls.zone = get_zone(cls.api_client, cloudstackTestClient.getZoneForTests())
         cls.services["mode"] = cls.zone.networktype
+        cls._cleanup = []
+        cls.unsupportedStorageType = False
+        if cls.hypervisor.lower() == 'lxc':
+            if not find_storage_pool_type(cls.api_client, storagetype='rbd'):
+                cls.unsupportedStorageType = True
+                return
 
         cls.template = get_template(
                             cls.api_client,
@@ -73,7 +80,7 @@ class TestVolumeLimits(cloudstackTestCase):
         cls.services["virtual_machine"]["zoneid"] = cls.zone.id
         cls.services["virtual_machine"]["template"] = cls.template.id
         cls.services["volume"]["zoneid"] = cls.zone.id
-        cls._cleanup = []
+
         try:
             cls.service_offering = ServiceOffering.create(cls.api_client, cls.services["service_offering"])
             cls._cleanup.append(cls.service_offering)
@@ -92,6 +99,9 @@ class TestVolumeLimits(cloudstackTestCase):
         return
 
     def setUp(self):
+        if self.unsupportedStorageType:
+            self.skipTest(
+                "unsupported storage type")
         self.apiclient = self.testClient.getApiClient()
         self.dbclient = self.testClient.getDbConnection()
         self.cleanup = []
@@ -433,7 +443,7 @@ class TestVolumeLimits(cloudstackTestCase):
         self.assertTrue(isVmExpunged(self.apiclient, self.virtualMachine_2.id), "VM not expunged \
                 in allotted time")
 
-        expectedCount = (self.initialResourceCount * 2) #Total 2 vms
+        expectedCount -= (self.template.size / (1024 ** 3))
         response = matchResourceCount(
                         self.apiclient, expectedCount,
                         RESOURCE_PRIMARY_STORAGE,
@@ -495,7 +505,7 @@ class TestVolumeLimits(cloudstackTestCase):
 	return
 
     @data(ROOT_DOMAIN_ADMIN, CHILD_DOMAIN_ADMIN)
-    @attr(tags=["advanced"], required_hardware="false")
+    @attr(tags=["advanced"], required_hardware="true")
     def test_create_template_snapshot(self, value):
         """Test create snapshot and templates from volume
 
@@ -568,12 +578,6 @@ class TestVolumeLimits(cloudstackTestCase):
             self.virtualMachine.detach_volume(apiclient, volume)
         except Exception as e:
             self.fail("Failure in detach volume operation: %s" % e)
-
-        response = matchResourceCount(
-                        self.apiclient, expectedCount,
-                        RESOURCE_PRIMARY_STORAGE,
-                        accountid=self.account.id)
-        self.assertEqual(response[0], PASS, response[1])
 
         try:
             self.debug("deleting the volume: %s" % volume.name)

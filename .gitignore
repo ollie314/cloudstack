@@ -37,7 +37,6 @@ build.number
 cloud.log.*.*
 unittest
 deps/cloud.userlibraries
-deps/awsapi-lib/
 .DS_Store
 .idea
 *.iml
@@ -56,16 +55,17 @@ tools/cli/build/
 *.iso
 *.tar.gz
 *.tgz
-.*
+
+# this ignores _all files starting with '.'. Don't do that!
+#.*
+
 target-eclipse
-awsapi/modules/*
 !.gitignore
 .classpath
 .settings.xml
 .settings/
 db.properties.override
 replace.properties.override
-awsapi/overlays/
 tools/marvin/marvin/cloudstackAPI/*
 *.egg-info/
 docs/tmp
@@ -85,7 +85,6 @@ configure-stamp
 *_flymake.js
 engine/storage/integration-test/test-output
 tools/apidoc/log/
-log/
 plugins/network-elements/juniper-contrail/logs/
 scripts/vm/hypervisor/xenserver/vhd-util
 *.orig
@@ -94,3 +93,6 @@ tools/appliance/box/
 .checkstyle
 .pmd
 .pmdruleset.xml
+.pydevproject
+systemvm/.pydevproject
+test/.pydevprojec

@@ -237,7 +237,10 @@ public class SnapshotServiceImpl implements SnapshotService {
             // Note that DataStore information in parentSnapshot is for primary
             // data store here, we need to
             // find the image store where the parent snapshot backup is located
-            SnapshotDataStoreVO parentSnapshotOnBackupStore = _snapshotStoreDao.findBySnapshot(parentSnapshot.getId(), DataStoreRole.Image);
+            SnapshotDataStoreVO parentSnapshotOnBackupStore = null;
+            if (parentSnapshot != null) {
+                parentSnapshotOnBackupStore = _snapshotStoreDao.findBySnapshot(parentSnapshot.getId(), DataStoreRole.Image);
+            }
             if (parentSnapshotOnBackupStore == null) {
                 return dataStoreMgr.getImageStore(snapshot.getDataCenterId());
             }
@@ -404,16 +407,19 @@ public class SnapshotServiceImpl implements SnapshotService {
     }
 
     @Override
-    public boolean revertSnapshot(Long snapshotId) {
-        SnapshotInfo snapshot = _snapshotFactory.getSnapshot(snapshotId, DataStoreRole.Primary);
-        PrimaryDataStore store = (PrimaryDataStore)snapshot.getDataStore();
+    public boolean revertSnapshot(SnapshotInfo snapshot) {
+        SnapshotInfo snapshotOnPrimaryStore = _snapshotFactory.getSnapshot(snapshot.getId(), DataStoreRole.Primary);
+        if (snapshotOnPrimaryStore == null) {
+            throw new CloudRuntimeException("Cannot find an entry for snapshot " + snapshot.getId() + " on primary storage pools");
+        }
+        PrimaryDataStore store = (PrimaryDataStore)snapshotOnPrimaryStore.getDataStore();
 
         AsyncCallFuture<SnapshotResult> future = new AsyncCallFuture<SnapshotResult>();
         RevertSnapshotContext<CommandResult> context = new RevertSnapshotContext<CommandResult>(null, snapshot, future);
         AsyncCallbackDispatcher<SnapshotServiceImpl, CommandResult> caller = AsyncCallbackDispatcher.create(this);
         caller.setCallback(caller.getTarget().revertSnapshotCallback(null, null)).setContext(context);
 
-        ((PrimaryDataStoreDriver)store.getDriver()).revertSnapshot(snapshot, caller);
+        ((PrimaryDataStoreDriver)store.getDriver()).revertSnapshot(snapshot, snapshotOnPrimaryStore, caller);
 
         SnapshotResult result = null;
         try {

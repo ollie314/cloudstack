@@ -469,7 +469,7 @@ public class VmwareHelper {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
         try {
-            out = new BufferedWriter(new OutputStreamWriter(bos));
+            out = new BufferedWriter(new OutputStreamWriter(bos,"UTF-8"));
 
             out.write("disksInChain=" + disksInChain);
             out.newLine();
@@ -653,7 +653,8 @@ public class VmwareHelper {
                 }
             }
         } catch (Exception ex) {
-
+            s_logger.info("[ignored]"
+                    + "failed toi get message for exception: " + e.getLocalizedMessage());
         }
 
         return ExceptionUtil.toString(e, printStack);

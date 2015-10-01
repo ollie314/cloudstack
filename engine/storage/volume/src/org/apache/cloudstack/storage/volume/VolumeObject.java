@@ -178,8 +178,10 @@ public class VolumeObject implements VolumeInfo {
         boolean result = false;
         try {
             volumeVO = volumeDao.findById(volumeVO.getId());
-            result = _volStateMachine.transitTo(volumeVO, event, null, volumeDao);
-            volumeVO = volumeDao.findById(volumeVO.getId());
+            if(volumeVO != null) {
+                result = _volStateMachine.transitTo(volumeVO, event, null, volumeDao);
+                volumeVO = volumeDao.findById(volumeVO.getId());
+            }
         } catch (NoTransitionException e) {
             String errorMessage = "Failed to transit volume: " + getVolumeId() + ", due to: " + e.toString();
             s_logger.debug(errorMessage);
@@ -331,11 +333,10 @@ public class VolumeObject implements VolumeInfo {
         } finally {
             // in case of OperationFailed, expunge the entry
             if (event == ObjectInDataStoreStateMachine.Event.OperationFailed &&
-                (volumeVO.getState() != Volume.State.Copying && volumeVO.getState() != Volume.State.Uploaded)) {
+                (volumeVO.getState() != Volume.State.Copying && volumeVO.getState() != Volume.State.Uploaded && volumeVO.getState() != Volume.State.UploadError)) {
                 objectInStoreMgr.deleteIfNotReady(this);
             }
         }
-
     }
 
     @Override

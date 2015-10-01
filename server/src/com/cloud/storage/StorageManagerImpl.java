@@ -41,9 +41,10 @@ import javax.ejb.Local;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
+import com.cloud.hypervisor.Hypervisor;
+
 import org.apache.log4j.Logger;
 import org.springframework.stereotype.Component;
-
 import org.apache.cloudstack.api.command.admin.storage.CancelPrimaryStorageMaintenanceCmd;
 import org.apache.cloudstack.api.command.admin.storage.CreateSecondaryStagingStoreCmd;
 import org.apache.cloudstack.api.command.admin.storage.CreateStoragePoolCmd;
@@ -59,6 +60,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreLifeCycle;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreProvider;
 import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreProviderManager;
+import org.apache.cloudstack.engine.subsystem.api.storage.EndPoint;
 import org.apache.cloudstack.engine.subsystem.api.storage.EndPointSelector;
 import org.apache.cloudstack.engine.subsystem.api.storage.HostScope;
 import org.apache.cloudstack.engine.subsystem.api.storage.HypervisorHostListener;
@@ -70,7 +72,9 @@ import org.apache.cloudstack.engine.subsystem.api.storage.SnapshotDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.SnapshotInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateDataFactory;
 import org.apache.cloudstack.engine.subsystem.api.storage.TemplateService;
+import org.apache.cloudstack.engine.subsystem.api.storage.TemplateService.TemplateApiResult;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeDataFactory;
+import org.apache.cloudstack.engine.subsystem.api.storage.VolumeInfo;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeService;
 import org.apache.cloudstack.engine.subsystem.api.storage.VolumeService.VolumeApiResult;
 import org.apache.cloudstack.engine.subsystem.api.storage.ZoneScope;
@@ -108,10 +112,14 @@ import com.cloud.cluster.ClusterManagerListener;
 import com.cloud.cluster.ManagementServerHost;
 import com.cloud.configuration.Config;
 import com.cloud.configuration.ConfigurationManager;
+import com.cloud.configuration.ConfigurationManagerImpl;
+import com.cloud.configuration.Resource.ResourceType;
 import com.cloud.dc.ClusterVO;
 import com.cloud.dc.DataCenterVO;
 import com.cloud.dc.dao.ClusterDao;
 import com.cloud.dc.dao.DataCenterDao;
+import com.cloud.event.ActionEvent;
+import com.cloud.event.EventTypes;
 import com.cloud.exception.AgentUnavailableException;
 import com.cloud.exception.ConnectionException;
 import com.cloud.exception.DiscoveryException;
@@ -121,6 +129,7 @@ import com.cloud.exception.OperationTimedoutException;
 import com.cloud.exception.PermissionDeniedException;
 import com.cloud.exception.ResourceInUseException;
 import com.cloud.exception.ResourceUnavailableException;
+import com.cloud.exception.StorageConflictException;
 import com.cloud.exception.StorageUnavailableException;
 import com.cloud.host.Host;
 import com.cloud.host.HostVO;
@@ -138,6 +147,7 @@ import com.cloud.service.ServiceOfferingVO;
 import com.cloud.storage.Storage.ImageFormat;
 import com.cloud.storage.Storage.StoragePoolType;
 import com.cloud.storage.Volume.Type;
+import com.cloud.storage.dao.DiskOfferingDao;
 import com.cloud.storage.dao.SnapshotDao;
 import com.cloud.storage.dao.StoragePoolHostDao;
 import com.cloud.storage.dao.StoragePoolWorkDao;
@@ -148,8 +158,10 @@ import com.cloud.storage.dao.VolumeDao;
 import com.cloud.storage.listener.StoragePoolMonitor;
 import com.cloud.storage.listener.VolumeStateListener;
 import com.cloud.template.TemplateManager;
+import com.cloud.template.VirtualMachineTemplate;
 import com.cloud.user.Account;
 import com.cloud.user.AccountManager;
+import com.cloud.user.ResourceLimitService;
 import com.cloud.user.dao.UserDao;
 import com.cloud.utils.DateUtil;
 import com.cloud.utils.NumbersUtil;
@@ -192,6 +204,8 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
     protected ConfigurationManager _configMgr;
     @Inject
     protected VolumeDao _volsDao;
+    @Inject
+    private VolumeDataStoreDao _volumeDataStoreDao;
     @Inject
     protected HostDao _hostDao;
     @Inject
@@ -245,10 +259,6 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
     @Inject
     ManagementServer _msServer;
     @Inject
-    DataStoreManager dataStoreMgr;
-    @Inject
-    DataStoreProviderManager dataStoreProviderMgr;
-    @Inject
     VolumeService volService;
     @Inject
     VolumeDataFactory volFactory;
@@ -266,6 +276,10 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
     private TemplateService _imageSrv;
     @Inject
     EndPointSelector _epSelector;
+    @Inject
+    private DiskOfferingDao _diskOfferingDao;
+    @Inject
+    ResourceLimitService _resourceLimitMgr;
 
     protected List<StoragePoolDiscoverer> _discoverers;
 
@@ -535,14 +549,25 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
     @DB
     @Override
     public DataStore createLocalStorage(Host host, StoragePoolInfo pInfo) throws ConnectionException {
-
         DataCenterVO dc = _dcDao.findById(host.getDataCenterId());
-        if (dc == null || !dc.isLocalStorageEnabled()) {
+        if (dc == null) {
+            return null;
+        }
+        boolean useLocalStorageForSystemVM = false;
+        Boolean isLocal = ConfigurationManagerImpl.SystemVMUseLocalStorage.valueIn(dc.getId());
+        if (isLocal != null) {
+            useLocalStorageForSystemVM = isLocal.booleanValue();
+        }
+        if (!(dc.isLocalStorageEnabled() || useLocalStorageForSystemVM)) {
             return null;
         }
         DataStore store;
         try {
-            StoragePoolVO pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), pInfo.getHost(), pInfo.getHostPath(), pInfo.getUuid());
+            String hostAddress = pInfo.getHost();
+            if (host.getHypervisorType() == Hypervisor.HypervisorType.VMware) {
+                hostAddress = "VMFS datastore: " + pInfo.getHostPath();
+            }
+            StoragePoolVO pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), hostAddress, pInfo.getHostPath(), pInfo.getUuid());
             if (pool == null && host.getHypervisorType() == HypervisorType.VMware) {
                 // perform run-time upgrade. In versions prior to 2.2.12, there
                 // is a bug that we don't save local datastore info (host path
@@ -551,19 +576,19 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
                 // available on the host, to support smooth migration, we
                 // need to perform runtime upgrade here
                 if (pInfo.getHostPath().length() > 0) {
-                    pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), pInfo.getHost(), "", pInfo.getUuid());
+                    pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), hostAddress, "", pInfo.getUuid());
                 }
             }
             if (pool == null) {
                 //the path can be different, but if they have the same uuid, assume they are the same storage
-                pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), pInfo.getHost(), null,
+                pool = _storagePoolDao.findPoolByHostPath(host.getDataCenterId(), host.getPodId(), hostAddress, null,
                         pInfo.getUuid());
                 if (pool != null) {
                     s_logger.debug("Found a storage pool: " + pInfo.getUuid() + ", but with different hostpath " + pInfo.getHostPath() + ", still treat it as the same pool");
                 }
             }
 
-            DataStoreProvider provider = dataStoreProviderMgr.getDefaultPrimaryDataStoreProvider();
+            DataStoreProvider provider = _dataStoreProviderMgr.getDefaultPrimaryDataStoreProvider();
             DataStoreLifeCycle lifeCycle = provider.getDataStoreLifeCycle();
             if (pool == null) {
                 Map<String, Object> params = new HashMap<String, Object>();
@@ -580,7 +605,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
 
                 store = lifeCycle.initialize(params);
             } else {
-                store = dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
+                store = _dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
             }
 
             pool = _storagePoolDao.findById(store.getId());
@@ -594,17 +619,17 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             throw new ConnectionException(true, "Unable to setup the local storage pool for " + host, e);
         }
 
-        return dataStoreMgr.getDataStore(store.getId(), DataStoreRole.Primary);
+        return _dataStoreMgr.getDataStore(store.getId(), DataStoreRole.Primary);
     }
 
     @Override
     public PrimaryDataStoreInfo createPool(CreateStoragePoolCmd cmd) throws ResourceInUseException, IllegalArgumentException, UnknownHostException,
     ResourceUnavailableException {
         String providerName = cmd.getStorageProviderName();
-        DataStoreProvider storeProvider = dataStoreProviderMgr.getDataStoreProvider(providerName);
+        DataStoreProvider storeProvider = _dataStoreProviderMgr.getDataStoreProvider(providerName);
 
         if (storeProvider == null) {
-            storeProvider = dataStoreProviderMgr.getDefaultPrimaryDataStoreProvider();
+            storeProvider = _dataStoreProviderMgr.getDefaultPrimaryDataStoreProvider();
             if (storeProvider == null) {
                 throw new InvalidParameterValueException("can't find storage provider: " + providerName);
             }
@@ -699,7 +724,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             throw new CloudRuntimeException("Failed to add data store: "+e.getMessage(), e);
         }
 
-        return (PrimaryDataStoreInfo)dataStoreMgr.getDataStore(store.getId(), DataStoreRole.Primary);
+        return (PrimaryDataStoreInfo)_dataStoreMgr.getDataStore(store.getId(), DataStoreRole.Primary);
     }
 
     private Map<String, String> extractApiParamAsMap(Map ds) {
@@ -717,6 +742,32 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             }
         }
         return details;
+    }
+
+    @ActionEvent(eventType = EventTypes.EVENT_DISABLE_PRIMARY_STORAGE, eventDescription = "disable storage pool")
+    private void disablePrimaryStoragePool(StoragePoolVO primaryStorage) {
+        if (!primaryStorage.getStatus().equals(StoragePoolStatus.Up)) {
+            throw new InvalidParameterValueException("Primary storage with id " + primaryStorage.getId() + " cannot be disabled. Storage pool state : " +
+                    primaryStorage.getStatus().toString());
+        }
+
+        DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
+        DataStoreLifeCycle dataStoreLifeCycle = provider.getDataStoreLifeCycle();
+        DataStore store = _dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        ((PrimaryDataStoreLifeCycle)dataStoreLifeCycle).disableStoragePool(store);
+    }
+
+    @ActionEvent(eventType = EventTypes.EVENT_ENABLE_PRIMARY_STORAGE, eventDescription = "enable storage pool")
+    private void enablePrimaryStoragePool(StoragePoolVO primaryStorage) {
+        if (!primaryStorage.getStatus().equals(StoragePoolStatus.Disabled)) {
+            throw new InvalidParameterValueException("Primary storage with id " + primaryStorage.getId() + " cannot be enabled. Storage pool state : " +
+                    primaryStorage.getStatus().toString());
+        }
+
+        DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
+        DataStoreLifeCycle dataStoreLifeCycle = provider.getDataStoreLifeCycle();
+        DataStore store = _dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        ((PrimaryDataStoreLifeCycle)dataStoreLifeCycle).enableStoragePool(store);
     }
 
     @Override
@@ -790,7 +841,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
 
         if (updatedCapacityBytes != null || updatedCapacityIops != null) {
             StoragePoolVO storagePool = _storagePoolDao.findById(id);
-            DataStoreProvider dataStoreProvider = dataStoreProviderMgr.getDataStoreProvider(storagePool.getStorageProviderName());
+            DataStoreProvider dataStoreProvider = _dataStoreProviderMgr.getDataStoreProvider(storagePool.getStorageProviderName());
             DataStoreLifeCycle dataStoreLifeCycle = dataStoreProvider.getDataStoreLifeCycle();
 
             if (dataStoreLifeCycle instanceof PrimaryDataStoreLifeCycle) {
@@ -803,7 +854,14 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             }
         }
 
-        if (updatedDetails.size() >= 0) {
+        Boolean enabled = cmd.getEnabled();
+        if (enabled != null) {
+            if (enabled) {
+                enablePrimaryStoragePool(pool);
+            } else {
+                disablePrimaryStoragePool(pool);
+            }
+        } else if (updatedDetails.size() >= 0) {
             _storagePoolDao.updateDetails(id, updatedDetails);
         }
 
@@ -815,7 +873,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             _storagePoolDao.updateCapacityIops(id, capacityIops);
         }
 
-        return (PrimaryDataStoreInfo)dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
+        return (PrimaryDataStoreInfo)_dataStoreMgr.getDataStore(pool.getId(), DataStoreRole.Primary);
     }
 
     @Override
@@ -879,19 +937,19 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
         _storagePoolDao.releaseFromLockTable(lock.getId());
         s_logger.trace("Released lock for storage pool " + id);
 
-        DataStoreProvider storeProvider = dataStoreProviderMgr.getDataStoreProvider(sPool.getStorageProviderName());
+        DataStoreProvider storeProvider = _dataStoreProviderMgr.getDataStoreProvider(sPool.getStorageProviderName());
         DataStoreLifeCycle lifeCycle = storeProvider.getDataStoreLifeCycle();
-        DataStore store = dataStoreMgr.getDataStore(sPool.getId(), DataStoreRole.Primary);
+        DataStore store = _dataStoreMgr.getDataStore(sPool.getId(), DataStoreRole.Primary);
         return lifeCycle.deleteDataStore(store);
     }
 
     @Override
-    public void connectHostToSharedPool(long hostId, long poolId) throws StorageUnavailableException {
-        StoragePool pool = (StoragePool)dataStoreMgr.getDataStore(poolId, DataStoreRole.Primary);
+    public void connectHostToSharedPool(long hostId, long poolId) throws StorageUnavailableException, StorageConflictException {
+        StoragePool pool = (StoragePool)_dataStoreMgr.getDataStore(poolId, DataStoreRole.Primary);
         assert (pool.isShared()) : "Now, did you actually read the name of this method?";
         s_logger.debug("Adding pool " + pool.getName() + " to  host " + hostId);
 
-        DataStoreProvider provider = dataStoreProviderMgr.getDataStoreProvider(pool.getStorageProviderName());
+        DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(pool.getStorageProviderName());
         HypervisorHostListener listener = hostListeners.get(provider.getName());
         listener.hostConnect(hostId, pool.getId());
     }
@@ -924,39 +982,32 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
         }
 
         s_logger.debug("Total over provisioned capacity of the pool " + storagePool.getName() + " id: " + storagePool.getId() + " is " + totalOverProvCapacity);
+        CapacityState capacityState = CapacityState.Enabled;
+        if (storagePool.getScope() == ScopeType.ZONE) {
+            DataCenterVO dc = ApiDBUtils.findZoneById(storagePool.getDataCenterId());
+            AllocationState allocationState = dc.getAllocationState();
+            capacityState = (allocationState == AllocationState.Disabled) ? CapacityState.Disabled : CapacityState.Enabled;
+        } else {
+            if (storagePool.getClusterId() != null) {
+                ClusterVO cluster = ApiDBUtils.findClusterById(storagePool.getClusterId());
+                if (cluster != null) {
+                    AllocationState allocationState = _configMgr.findClusterAllocationState(cluster);
+                    capacityState = (allocationState == AllocationState.Disabled) ? CapacityState.Disabled : CapacityState.Enabled;
+                }
+            }
+        }
         if (capacities.size() == 0) {
             CapacityVO capacity =
                     new CapacityVO(storagePool.getId(), storagePool.getDataCenterId(), storagePool.getPodId(), storagePool.getClusterId(), allocated, totalOverProvCapacity,
                             capacityType);
-
-            if (storagePool.getScope() == ScopeType.ZONE) {
-                DataCenterVO dc = ApiDBUtils.findZoneById(storagePool.getDataCenterId());
-                AllocationState allocationState = dc.getAllocationState();
-                CapacityState capacityState = (allocationState == AllocationState.Disabled) ? CapacityState.Disabled : CapacityState.Enabled;
-                capacity.setCapacityState(capacityState);
-            } else {
-                if (storagePool.getClusterId() != null) {
-                    ClusterVO cluster = ApiDBUtils.findClusterById(storagePool.getClusterId());
-                    if (cluster != null) {
-                        AllocationState allocationState = _configMgr.findClusterAllocationState(cluster);
-                        CapacityState capacityState = (allocationState == AllocationState.Disabled) ? CapacityState.Disabled : CapacityState.Enabled;
-                        capacity.setCapacityState(capacityState);
-                    }
-                }
-            }
+            capacity.setCapacityState(capacityState);
             _capacityDao.persist(capacity);
         } else {
             CapacityVO capacity = capacities.get(0);
-            boolean update = false;
-            if (capacity.getTotalCapacity() != totalOverProvCapacity) {
+            if (capacity.getTotalCapacity() != totalOverProvCapacity || allocated != 0L || capacity.getCapacityState() != capacityState) {
                 capacity.setTotalCapacity(totalOverProvCapacity);
-                update = true;
-            }
-            if (allocated != 0) {
                 capacity.setUsedCapacity(allocated);
-                update = true;
-            }
-            if (update) {
+                capacity.setCapacityState(capacityState);
                 _capacityDao.update(capacity.getId(), capacity);
             }
         }
@@ -1063,11 +1114,9 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
                     List<VolumeVO> vols = _volsDao.listVolumesToBeDestroyed();
                     for (VolumeVO vol : vols) {
                         try {
-
                             volService.expungeVolumeAsync(volFactory.getVolume(vol.getId()));
-
                         } catch (Exception e) {
-                            s_logger.warn("Unable to destroy " + vol.getId(), e);
+                            s_logger.warn("Unable to destroy volume " + vol.getUuid(), e);
                         }
                     }
 
@@ -1081,10 +1130,99 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
                             }
                             _snapshotDao.expunge(snapshotVO.getId());
                         } catch (Exception e) {
-                            s_logger.warn("Unable to destroy " + snapshotVO.getId(), e);
+                            s_logger.warn("Unable to destroy snapshot " + snapshotVO.getUuid(), e);
                         }
                     }
 
+                    // destroy uploaded volumes in abandoned/error state
+                    List<VolumeDataStoreVO> volumeDataStores = _volumeDataStoreDao.listByVolumeState(Volume.State.UploadError, Volume.State.UploadAbandoned);
+                    for (VolumeDataStoreVO volumeDataStore : volumeDataStores) {
+                        VolumeVO volume = _volumeDao.findById(volumeDataStore.getVolumeId());
+                        if (volume == null) {
+                            s_logger.warn("Uploaded volume with id " + volumeDataStore.getVolumeId() + " not found, so cannot be destroyed");
+                            continue;
+                        }
+                        try {
+                            DataStore dataStore = _dataStoreMgr.getDataStore(volumeDataStore.getDataStoreId(), DataStoreRole.Image);
+                            EndPoint ep = _epSelector.select(dataStore, volumeDataStore.getExtractUrl());
+                            if (ep == null) {
+                                s_logger.warn("There is no secondary storage VM for image store " + dataStore.getName() + ", cannot destroy uploaded volume " + volume.getUuid());
+                                continue;
+                            }
+                            Host host = _hostDao.findById(ep.getId());
+                            if (host != null && host.getManagementServerId() != null) {
+                                if (_serverId == host.getManagementServerId().longValue()) {
+                                    if (!volService.destroyVolume(volume.getId())) {
+                                        s_logger.warn("Unable to destroy uploaded volume " + volume.getUuid());
+                                        continue;
+                                    }
+                                    // decrement volume resource count
+                                    _resourceLimitMgr.decrementResourceCount(volume.getAccountId(), ResourceType.volume, volume.isDisplayVolume());
+                                    // expunge volume from secondary if volume is on image store
+                                    VolumeInfo volOnSecondary = volFactory.getVolume(volume.getId(), DataStoreRole.Image);
+                                    if (volOnSecondary != null) {
+                                        s_logger.info("Expunging volume " + volume.getUuid() + " uploaded using HTTP POST from secondary data store");
+                                        AsyncCallFuture<VolumeApiResult> future = volService.expungeVolumeAsync(volOnSecondary);
+                                        VolumeApiResult result = future.get();
+                                        if (!result.isSuccess()) {
+                                            s_logger.warn("Failed to expunge volume " + volume.getUuid() + " from the image store " + dataStore.getName() + " due to: " + result.getResult());
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Throwable th) {
+                            s_logger.warn("Unable to destroy uploaded volume " + volume.getUuid() + ". Error details: " + th.getMessage());
+                        }
+                    }
+
+                    // destroy uploaded templates in abandoned/error state
+                    List<TemplateDataStoreVO> templateDataStores = _templateStoreDao.listByTemplateState(VirtualMachineTemplate.State.UploadError, VirtualMachineTemplate.State.UploadAbandoned);
+                    for (TemplateDataStoreVO templateDataStore : templateDataStores) {
+                        VMTemplateVO template = _templateDao.findById(templateDataStore.getTemplateId());
+                        if (template == null) {
+                            s_logger.warn("Uploaded template with id " + templateDataStore.getTemplateId() + " not found, so cannot be destroyed");
+                            continue;
+                        }
+                        try {
+                            DataStore dataStore = _dataStoreMgr.getDataStore(templateDataStore.getDataStoreId(), DataStoreRole.Image);
+                            EndPoint ep = _epSelector.select(dataStore, templateDataStore.getExtractUrl());
+                            if (ep == null) {
+                                s_logger.warn("There is no secondary storage VM for image store " + dataStore.getName() + ", cannot destroy uploaded template " + template.getUuid());
+                                continue;
+                            }
+                            Host host = _hostDao.findById(ep.getId());
+                            if (host != null && host.getManagementServerId() != null) {
+                                if (_serverId == host.getManagementServerId().longValue()) {
+                                    AsyncCallFuture<TemplateApiResult> future = _imageSrv.deleteTemplateAsync(tmplFactory.getTemplate(template.getId(), dataStore));
+                                    TemplateApiResult result = future.get();
+                                    if (!result.isSuccess()) {
+                                        s_logger.warn("Failed to delete template " + template.getUuid() + " from the image store " + dataStore.getName() + " due to: " + result.getResult());
+                                        continue;
+                                    }
+                                    // remove from template_zone_ref
+                                    List<VMTemplateZoneVO> templateZones = _vmTemplateZoneDao.listByZoneTemplate(((ImageStoreEntity)dataStore).getDataCenterId(), template.getId());
+                                    if (templateZones != null) {
+                                        for (VMTemplateZoneVO templateZone : templateZones) {
+                                            _vmTemplateZoneDao.remove(templateZone.getId());
+                                        }
+                                    }
+                                    // mark all the occurrences of this template in the given store as destroyed
+                                    _templateStoreDao.removeByTemplateStore(template.getId(), dataStore.getId());
+                                    // find all eligible image stores for this template
+                                    List<DataStore> imageStores = _tmpltMgr.getImageStoreByTemplate(template.getId(), null);
+                                    if (imageStores == null || imageStores.size() == 0) {
+                                        template.setState(VirtualMachineTemplate.State.Inactive);
+                                        _templateDao.update(template.getId(), template);
+
+                                        // decrement template resource count
+                                        _resourceLimitMgr.decrementResourceCount(template.getAccountId(), ResourceType.template);
+                                    }
+                                }
+                            }
+                        } catch (Throwable th) {
+                            s_logger.warn("Unable to destroy uploaded template " + template.getUuid() + ". Error details: " + th.getMessage());
+                        }
+                    }
                 } finally {
                     scanLock.unlock();
                 }
@@ -1143,7 +1281,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
         // so here we don't need to issue DeleteCommand to resource anymore, only need to remove db entry.
         try {
             // Cleanup templates in template_store_ref
-            List<DataStore> imageStores = dataStoreMgr.getImageStoresByScope(new ZoneScope(null));
+            List<DataStore> imageStores = _dataStoreMgr.getImageStoresByScope(new ZoneScope(null));
             for (DataStore store : imageStores) {
                 try {
                     long storeId = store.getId();
@@ -1244,12 +1382,12 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
                     primaryStorage.getStatus().toString());
         }
 
-        DataStoreProvider provider = dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
+        DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
         DataStoreLifeCycle lifeCycle = provider.getDataStoreLifeCycle();
-        DataStore store = dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        DataStore store = _dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
         lifeCycle.maintain(store);
 
-        return (PrimaryDataStoreInfo)dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        return (PrimaryDataStoreInfo)_dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
     }
 
     @Override
@@ -1271,12 +1409,12 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
                     primaryStorage.getStatus().toString(), primaryStorageId);
         }
 
-        DataStoreProvider provider = dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
+        DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(primaryStorage.getStorageProviderName());
         DataStoreLifeCycle lifeCycle = provider.getDataStoreLifeCycle();
-        DataStore store = dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        DataStore store = _dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
         lifeCycle.cancelMaintain(store);
 
-        return (PrimaryDataStoreInfo)dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
+        return (PrimaryDataStoreInfo)_dataStoreMgr.getDataStore(primaryStorage.getId(), DataStoreRole.Primary);
     }
 
 
@@ -1404,7 +1542,7 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
 
     @Override
     public PrimaryDataStoreInfo getStoragePool(long id) {
-        return (PrimaryDataStoreInfo)dataStoreMgr.getDataStore(id, DataStoreRole.Primary);
+        return (PrimaryDataStoreInfo)_dataStoreMgr.getDataStore(id, DataStoreRole.Primary);
     }
 
     @Override
@@ -1579,19 +1717,32 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
         long allocatedSizeWithtemplate = _capacityMgr.getAllocatedPoolCapacity(poolVO, null);
         long totalAskingSize = 0;
         for (Volume volume : volumes) {
-            if (volume.getTemplateId() != null) {
-                VMTemplateVO tmpl = _templateDao.findByIdIncludingRemoved(volume.getTemplateId());
+            // refreshing the volume from the DB to get latest hv_ss_reserve (hypervisor snapshot reserve) field
+            // I could have just assigned this to "volume", but decided to make a new variable for it so that it
+            // might be clearer that this "volume" in "volumes" still might have an old value for hv_ss_reverse.
+            VolumeVO volumeVO = _volumeDao.findById(volume.getId());
+
+            if (volumeVO.getHypervisorSnapshotReserve() == null) {
+                // update the volume's hv_ss_reserve (hypervisor snapshot reserve) from a disk offering (used for managed storage)
+                volService.updateHypervisorSnapshotReserveForVolume(getDiskOfferingVO(volumeVO), volumeVO.getId(), getHypervisorType(volumeVO));
+
+                // hv_ss_reserve field might have been updated; refresh from DB to make use of it in getVolumeSizeIncludingHypervisorSnapshotReserve
+                volumeVO = _volumeDao.findById(volume.getId());
+            }
+
+            if (volumeVO.getTemplateId() != null) {
+                VMTemplateVO tmpl = _templateDao.findByIdIncludingRemoved(volumeVO.getTemplateId());
                 if (tmpl != null && tmpl.getFormat() != ImageFormat.ISO) {
                     allocatedSizeWithtemplate = _capacityMgr.getAllocatedPoolCapacity(poolVO, tmpl);
                 }
             }
-            if (volume.getState() != Volume.State.Ready) {
-                totalAskingSize = totalAskingSize + getVolumeSizeIncludingHypervisorSnapshotReserve(volume, pool);
+            if (volumeVO.getState() != Volume.State.Ready) {
+                totalAskingSize = totalAskingSize + getVolumeSizeIncludingHypervisorSnapshotReserve(volumeVO, pool);
             }
         }
 
         long totalOverProvCapacity;
-        if (pool.getPoolType() == StoragePoolType.NetworkFilesystem || pool.getPoolType() == StoragePoolType.VMFS) {
+        if (pool.getPoolType() == StoragePoolType.NetworkFilesystem || pool.getPoolType() == StoragePoolType.VMFS || pool.getPoolType() == StoragePoolType.Filesystem) {
             BigDecimal overProvFactor = getStorageOverProvisioningFactor(pool.getId());
             totalOverProvCapacity = overProvFactor.multiply(new BigDecimal(pool.getCapacityBytes())).longValue();
             s_logger.debug("Found storage pool " + poolVO.getName() + " of type " + pool.getPoolType().toString() + " with overprovisioning factor "
@@ -1629,6 +1780,24 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
             return false;
         }
         return true;
+    }
+
+    private DiskOfferingVO getDiskOfferingVO(Volume volume) {
+        Long diskOfferingId = volume.getDiskOfferingId();
+
+        return _diskOfferingDao.findById(diskOfferingId);
+    }
+
+    private HypervisorType getHypervisorType(Volume volume) {
+        Long instanceId = volume.getInstanceId();
+
+        VMInstanceVO vmInstance = _vmInstanceDao.findById(instanceId);
+
+        if (vmInstance != null) {
+            return vmInstance.getHypervisorType();
+        }
+
+        return null;
     }
 
     private long getVolumeSizeIncludingHypervisorSnapshotReserve(Volume volume, StoragePool pool) {
@@ -1792,9 +1961,9 @@ public class StorageManagerImpl extends ManagerBase implements StorageManager, C
 
                 _accountMgr.checkAccessAndSpecifyAuthority(CallContext.current().getCallingAccount(), store.getDataCenterId());
 
-                DataStoreProvider provider = dataStoreProviderMgr.getDataStoreProvider(store.getProviderName());
+                DataStoreProvider provider = _dataStoreProviderMgr.getDataStoreProvider(store.getProviderName());
                 DataStoreLifeCycle lifeCycle = provider.getDataStoreLifeCycle();
-                DataStore secStore = dataStoreMgr.getDataStore(storeId, DataStoreRole.Image);
+                DataStore secStore = _dataStoreMgr.getDataStore(storeId, DataStoreRole.Image);
                 lifeCycle.migrateToObjectStore(secStore);
                 // update store_role in template_store_ref and snapshot_store_ref to ImageCache
                 _templateStoreDao.updateStoreRoleToCachce(storeId);

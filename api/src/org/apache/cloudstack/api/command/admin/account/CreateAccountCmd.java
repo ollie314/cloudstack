@@ -19,6 +19,7 @@ package org.apache.cloudstack.api.command.admin.account;
 import java.util.Collection;
 import java.util.Map;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
 import org.apache.cloudstack.api.APICommand;
@@ -174,6 +175,7 @@ public class CreateAccountCmd extends BaseCmd {
 
     @Override
     public void execute() {
+        validateParams();
         CallContext.current().setEventDetails("Account Name: " + getAccountName() + ", Domain Id:" + getDomainId());
         UserAccount userAccount =
             _accountService.createUserAccount(getUsername(), getPassword(), getFirstName(), getLastName(), getEmail(), getTimeZone(), getAccountName(), getAccountType(),
@@ -184,6 +186,15 @@ public class CreateAccountCmd extends BaseCmd {
             setResponseObject(response);
         } else {
             throw new ServerApiException(ApiErrorCode.INTERNAL_ERROR, "Failed to create a user account");
+        }
+    }
+
+    /**
+     * TODO: this should be done through a validator. for now replicating the validation logic in create account and user
+     */
+    private void validateParams() {
+        if(StringUtils.isEmpty(getPassword())) {
+            throw new ServerApiException(ApiErrorCode.PARAM_ERROR, "Empty passwords are not allowed");
         }
     }
 }

@@ -21,7 +21,13 @@ import java.util.Date;
 import org.apache.cloudstack.api.InternalIdentity;
 
 public interface User extends OwnedBy, InternalIdentity {
+
+    public enum Source {
+        LDAP, SAML2, SAML2DISABLED, UNKNOWN
+    }
+
     public static final long UID_SYSTEM = 1;
+    public static final long UID_ADMIN = 2;
 
     @Override
     public long getId();
@@ -76,4 +82,11 @@ public interface User extends OwnedBy, InternalIdentity {
 
     boolean isDefault();
 
+    public Source getSource();
+
+    void setSource(Source source);
+
+    public String getExternalEntity();
+
+    public void setExternalEntity(String entity);
 }

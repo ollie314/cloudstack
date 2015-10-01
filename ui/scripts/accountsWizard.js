@@ -16,8 +16,9 @@
 // under the License.
 
 (function(cloudStack, $) {
-	var rootDomainId;
-	
+    var rootDomainId;
+
+
     cloudStack.accountsWizard = {
 
         informationWithinLdap: {
@@ -77,9 +78,9 @@
                 validation: {
                     required: true
                 },
-                select: function(args) {                    
+                select: function(args) {
                     $.ajax({
-                        url: createURL("listDomains"),                        
+                        url: createURL("listDomains"),
                         success: function(json) {
                             var items = [];
                             domainObjs = json.listdomainsresponse.domain;
@@ -91,6 +92,9 @@
 
                                 if (this.level === 0)
                                     rootDomainId = this.id;
+                            });
+                            items.sort(function(a, b) {
+                                return a.description.localeCompare(b.description);
                             });
                             args.response.success({
                                 data: items
@@ -159,8 +163,34 @@
                 validation: {
                     required: false
                 }
+            },
+            samlEnable: {
+                label: 'label.saml.enable',
+                docID: 'helpSamlEnable',
+                isBoolean: true,
+                validation: {
+                    required: false
+                }
+            },
+            samlEntity: {
+                label: 'label.saml.entity',
+                docID: 'helpSamlEntity',
+                validation: {
+                    required: false
+                },
+                select: function(args) {
+                    var items = [];
+                    $(g_idpList).each(function() {
+                        items.push({
+                            id: this.id,
+                            description: this.orgName
+                        });
+                    });
+                    args.response.success({
+                        data: items
+                    });
+                }
             }
-
         },
 
         action: function(args) {
@@ -183,7 +213,7 @@
                 if (md5Hashed) {
                     password = $.md5(password);
                 } else {
-                	password = todb(password);
+                    password = todb(password);
                 }
                 array1.push("&password=" + password);
             }
@@ -197,10 +227,10 @@
             }
 
             var accountType = args.data.accounttype;
-            if (accountType == "1") { //if "admin" is selected in account type dropdown            
-            	if (rootDomainId == undefined || args.data.domainid != rootDomainId ) { //but current login has no visibility to root domain object, or the selected domain is not root domain
+            if (accountType == "1") { //if "admin" is selected in account type dropdown
+                if (rootDomainId == undefined || args.data.domainid != rootDomainId ) { //but current login has no visibility to root domain object, or the selected domain is not root domain
                     accountType = "2"; // change accountType from root-domain("1") to domain-admin("2")
-            	}
+                }
             }
             array1.push("&accounttype=" + accountType);
 
@@ -215,6 +245,18 @@
                 array1.push("&group=" + args.groupname);
             }
 
+            var authorizeUsersForSamlSSO = function (users, entity) {
+                for (var i = 0; i < users.length; i++) {
+                    $.ajax({
+                        url: createURL('authorizeSamlSso&enable=true&userid=' + users[i].id + "&entityid=" + entity),
+                        error: function(XMLHttpResponse) {
+                            args.response.error(parseXMLHttpResponse(XMLHttpResponse));
+                        }
+                    });
+                }
+                return;
+            };
+
             if (ldapStatus) {
                 if (args.groupname) {
                     $.ajax({
@@ -222,6 +264,13 @@
                         dataType: "json",
                         type: "POST",
                         async: false,
+                        success: function (json) {
+                            if (json.ldapuserresponse && args.data.samlEnable && args.data.samlEnable === 'on') {
+                                cloudStack.dialog.notice({
+                                    message: "Unable to find users IDs to enable SAML Single Sign On, kindly enable it manually."
+                                });
+                            }
+                        },
                         error: function(XMLHttpResponse) {
                             args.response.error(parseXMLHttpResponse(XMLHttpResponse));
                         }
@@ -232,6 +281,14 @@
                         dataType: "json",
                         type: "POST",
                         async: false,
+                        success: function(json) {
+                            if (args.data.samlEnable && args.data.samlEnable === 'on') {
+                                var users = json.createaccountresponse.account.user;
+                                var entity = args.data.samlEntity;
+                                if (users && entity)
+                                    authorizeUsersForSamlSSO(users, entity);
+                            }
+                        },
                         error: function(XMLHttpResponse) {
                             args.response.error(parseXMLHttpResponse(XMLHttpResponse));
                         }
@@ -243,11 +300,19 @@
                     dataType: "json",
                     type: "POST",
                     async: false,
+                    success: function(json) {
+                        if (args.data.samlEnable && args.data.samlEnable === 'on') {
+                            var users = json.createaccountresponse.account.user;
+                            var entity = args.data.samlEntity;
+                            if (users && entity)
+                                authorizeUsersForSamlSSO(users, entity);
+                        }
+                    },
                     error: function(XMLHttpResponse) {
                         args.response.error(parseXMLHttpResponse(XMLHttpResponse));
                     }
                 });
             }
-        }        
+        }
     };
 }(cloudStack, jQuery));

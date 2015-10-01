@@ -457,7 +457,7 @@ public class NetscalerResource implements ServerResource {
         try {
             IpAddressTO[] ips = cmd.getIpAddresses();
             for (IpAddressTO ip : ips) {
-                long guestVlanTag = Long.valueOf(ip.getBroadcastUri());
+                long guestVlanTag = Long.parseLong(ip.getBroadcastUri());
                 String vlanSelfIp = ip.getVlanGateway();
                 String vlanNetmask = ip.getVlanNetmask();
 
@@ -954,6 +954,7 @@ public class NetscalerResource implements ServerResource {
                 try {
                     Thread.sleep(10000);
                 } catch (InterruptedException e) {
+                    s_logger.debug("[ignored] interupted while waiting for netscaler to be 'up'.");
                 }
                 ns refreshNsObj = new ns();
                 refreshNsObj.set_id(newVpx.get_id());
@@ -1695,7 +1696,8 @@ public class NetscalerResource implements ServerResource {
                     return site;
                 }
             } catch (Exception e) {
-
+                s_logger.info("[ignored]"
+                        + "error getting site: " + e.getLocalizedMessage());
             }
             return null;
         }
