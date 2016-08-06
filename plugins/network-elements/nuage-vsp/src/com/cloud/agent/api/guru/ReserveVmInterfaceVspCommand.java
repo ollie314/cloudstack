@@ -20,91 +20,40 @@
 package com.cloud.agent.api.guru;
 
 import com.cloud.agent.api.Command;
+import net.nuage.vsp.acs.client.api.model.VspNetwork;
+import net.nuage.vsp.acs.client.api.model.VspNic;
+import net.nuage.vsp.acs.client.api.model.VspStaticNat;
+import net.nuage.vsp.acs.client.api.model.VspVm;
 
 public class ReserveVmInterfaceVspCommand extends Command {
 
-    String _nicUuid;
-    String _nicMacAddress;
-    String _networkUuid;
-    boolean _isL3Network;
-    String _vpcUuid;
-    String _networkDomainUuid;
-    String _networksAccountUuid;
-    boolean _isDomainRouter;
-    String _domainRouterIp;
-    String _vmInstanceName;
-    String _vmUuid;
-    String _vmUserName;
-    String _vmUserDomainName;
+    private final VspNetwork _network;
+    private final VspVm _vm;
+    private final VspNic _nic;
+    private final VspStaticNat _staticNat;
 
-    public ReserveVmInterfaceVspCommand(String nicUuid, String nicMacAddress, String networkUuid, boolean isL3Network, String vpcUuid, String networkDomainUuid,
-            String networksAccountUuid, boolean isDomainRouter, String domainRouterIp, String vmInstanceName, String vmUuid, String vmUserName, String vmUserDomainName) {
+    public ReserveVmInterfaceVspCommand(VspNetwork network, VspVm vm, VspNic nic, VspStaticNat staticNat) {
         super();
-        this._nicUuid = nicUuid;
-        this._nicMacAddress = nicMacAddress;
-        this._networkUuid = networkUuid;
-        this._isL3Network = isL3Network;
-        this._vpcUuid = vpcUuid;
-        this._networkDomainUuid = networkDomainUuid;
-        this._networksAccountUuid = networksAccountUuid;
-        this._isDomainRouter = isDomainRouter;
-        this._domainRouterIp = domainRouterIp;
-        this._vmInstanceName = vmInstanceName;
-        this._vmUuid = vmUuid;
-        this._vmUserName = vmUserName;
-        this._vmUserDomainName = vmUserDomainName;
+        this._network = network;
+        this._vm = vm;
+        this._nic = nic;
+        this._staticNat = staticNat;
     }
 
-    public String getNicUuid() {
-        return _nicUuid;
+    public VspNetwork getNetwork() {
+        return _network;
     }
 
-    public String getNicMacAddress() {
-        return _nicMacAddress;
+    public VspVm getVm() {
+        return _vm;
     }
 
-    public String getNetworkUuid() {
-        return _networkUuid;
+    public VspNic getNic() {
+        return _nic;
     }
 
-    public boolean isL3Network() {
-        return _isL3Network;
-    }
-
-    public String getVpcUuid() {
-        return _vpcUuid;
-    }
-
-    public String getNetworkDomainUuid() {
-        return _networkDomainUuid;
-    }
-
-    public String getNetworksAccountUuid() {
-        return _networksAccountUuid;
-    }
-
-    public boolean isDomainRouter() {
-        return _isDomainRouter;
-    }
-
-    public String _getDomainRouterIp() {
-        return _domainRouterIp;
-    }
-
-    public String _getVmInstanceName() {
-        return _vmInstanceName;
-    }
-
-    public String _getVmUuid() {
-        return _vmUuid;
-    }
-
-    public String _getVmUserName() {
-        return _vmUserName;
-    }
-
-    public String _getVmUserDomainName() {
-        return _vmUserDomainName;
+    public VspStaticNat getStaticNat() {
+        return _staticNat;
     }
 
     @Override
@@ -112,4 +61,29 @@ public class ReserveVmInterfaceVspCommand extends Command {
         return false;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ReserveVmInterfaceVspCommand)) return false;
+        if (!super.equals(o)) return false;
+
+        ReserveVmInterfaceVspCommand that = (ReserveVmInterfaceVspCommand) o;
+
+        if (_network != null ? !_network.equals(that._network) : that._network != null) return false;
+        if (_nic != null ? !_nic.equals(that._nic) : that._nic != null) return false;
+        if (_staticNat != null ? !_staticNat.equals(that._staticNat) : that._staticNat != null) return false;
+        if (_vm != null ? !_vm.equals(that._vm) : that._vm != null) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + (_network != null ? _network.hashCode() : 0);
+        result = 31 * result + (_vm != null ? _vm.hashCode() : 0);
+        result = 31 * result + (_nic != null ? _nic.hashCode() : 0);
+        result = 31 * result + (_staticNat != null ? _staticNat.hashCode() : 0);
+        return result;
+    }
 }

@@ -13,9 +13,9 @@ override_dh_auto_configure:
 	echo VERSION=${VERSION} >> replace.properties.tmp
 
 override_dh_auto_build:
-	mvn -T C1.5 clean package -Psystemvm -DskipTests -Dsystemvm \
+	mvn -T C1.5 clean package -Psystemvm,developer -Dsystemvm \
 	    -Dcs.replace.properties=replace.properties.tmp \
-	    -Dmaven.repo.local=$(HOME)/.m2/repository
+	    -Dmaven.repo.local=$(HOME)/.m2/repository \
 	     ${ACS_BUILD_OPTS}
 
 override_dh_auto_clean:
@@ -45,6 +45,7 @@ override_dh_auto_install:
 	install -D agent/target/transformed/cloud-setup-agent $(DESTDIR)/usr/bin/cloudstack-setup-agent
 	install -D agent/target/transformed/cloud-ssh $(DESTDIR)/usr/bin/cloudstack-ssh
 	install -D agent/target/transformed/cloudstack-agent-profile.sh $(DESTDIR)/$(SYSCONFDIR)/profile.d/cloudstack-agent-profile.sh
+	install -D agent/target/transformed/cloudstack-agent.logrotate $(DESTDIR)/$(SYSCONFDIR)/logrotate.d/cloudstack-agent
 	install -D agent/target/transformed/cloudstack-agent-upgrade $(DESTDIR)/usr/bin/cloudstack-agent-upgrade
 	install -D agent/target/transformed/libvirtqemuhook $(DESTDIR)/usr/share/$(PACKAGE)-agent/lib/
 	install -D agent/target/transformed/* $(DESTDIR)/$(SYSCONFDIR)/$(PACKAGE)/agent
@@ -123,6 +124,14 @@ override_dh_auto_install:
 	cp usage/target/transformed/db.properties $(DESTDIR)/$(SYSCONFDIR)/$(PACKAGE)/usage/
 	cp usage/target/transformed/log4j-cloud_usage.xml $(DESTDIR)/$(SYSCONFDIR)/$(PACKAGE)/usage/log4j-cloud.xml
 	install -D packaging/debian/init/cloud-usage $(DESTDIR)/$(SYSCONFDIR)/init.d/$(PACKAGE)-usage
+
+	# cloudstack-marvin
+	mkdir -p $(DESTDIR)/usr/share/$(PACKAGE)-marvin
+	cp tools/marvin/dist/Marvin-*.tar.gz $(DESTDIR)/usr/share/$(PACKAGE)-marvin/
+
+	# cloudstack-integration-tests
+	mkdir -p $(DESTDIR)/usr/share/$(PACKAGE)-integration-tests
+	cp -r test/integration/* $(DESTDIR)/usr/share/$(PACKAGE)-integration-tests/
 
 override_dh_installinit:
 	dh_installinit -pcloudstack-management -pcloudstack-agent -pcloudstack-usage --onlyscripts --no-start

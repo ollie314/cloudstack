@@ -19,28 +19,68 @@
 
 package net.nuage.vsp.acs;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLClassLoader;
+import net.nuage.vsp.acs.client.api.NuageVspApiClient;
+import net.nuage.vsp.acs.client.api.NuageVspElementClient;
+import net.nuage.vsp.acs.client.api.NuageVspGuruClient;
+import net.nuage.vsp.acs.client.api.NuageVspManagerClient;
+import net.nuage.vsp.acs.client.api.impl.NuageVspApiClientImpl;
+import net.nuage.vsp.acs.client.api.impl.NuageVspElementClientImpl;
+import net.nuage.vsp.acs.client.api.impl.NuageVspGuruClientImpl;
+import net.nuage.vsp.acs.client.api.impl.NuageVspManagerClientImpl;
+import net.nuage.vsp.acs.client.api.model.VspHost;
+import org.apache.log4j.Logger;
+
 
 public class NuageVspPluginClientLoader {
 
-    private static NuageVspPluginClientLoader nuageVspPluginClientClassloader;
-    private ClassLoader loader = null;
+    private static final Logger s_logger = Logger.getLogger(NuageVspPluginClientLoader.class);
 
-    private NuageVspPluginClientLoader(String nuagePluginClientJarLocation) {
-        try {
-            loader = URLClassLoader.newInstance(new URL[] {new URL("jar:file:" + nuagePluginClientJarLocation + "!/")},
-                    getClass().getClassLoader());
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        }
+    private NuageVspApiClient _nuageVspApiClient;
+    private NuageVspElementClient _nuageVspElementClient;
+    private NuageVspGuruClient _nuageVspGuruClient;
+    private NuageVspManagerClient _nuageVspManagerClient;
+
+    private NuageVspPluginClientLoader() {
+
     }
 
-    public static ClassLoader getClassLoader(String nuagePluginClientJarLocation) {
-        if (nuageVspPluginClientClassloader == null) {
-            nuageVspPluginClientClassloader = new NuageVspPluginClientLoader(nuagePluginClientJarLocation);
-        }
-        return nuageVspPluginClientClassloader.loader;
+    public static NuageVspPluginClientLoader getClientLoader(String relativePath, String cmsUserEnterprise, String cmsUserLogin,
+            String cmsUserPassword, int numRetries, int retryInterval, String nuageVspCmsId) {
+        NuageVspPluginClientLoader nuageVspPluginClientClassloader = new NuageVspPluginClientLoader();
+        nuageVspPluginClientClassloader.loadClasses(relativePath, cmsUserEnterprise, cmsUserLogin, cmsUserPassword, numRetries, retryInterval, nuageVspCmsId);
+        return nuageVspPluginClientClassloader;
+    }
+
+    private void loadClasses(String relativePath, String cmsUserEnterprise, String cmsUserLogin, String cmsUserPassword, int numRetries,
+            int retryInterval, String nuageVspCmsId) {
+        VspHost vspHost = new VspHost.Builder()
+                .restRelativePath(relativePath)
+                .cmsUserEnterprise(cmsUserEnterprise)
+                .cmsUserLogin(cmsUserLogin)
+                .cmsUserPassword(cmsUserPassword)
+                .noofRetry(numRetries)
+                .retryInterval(retryInterval)
+                .nuageVspCmsId(nuageVspCmsId)
+                .build();
+        _nuageVspApiClient = new NuageVspApiClientImpl(vspHost);
+        _nuageVspElementClient = new NuageVspElementClientImpl(_nuageVspApiClient);
+        _nuageVspGuruClient = new NuageVspGuruClientImpl(_nuageVspApiClient);
+        _nuageVspManagerClient = new NuageVspManagerClientImpl(_nuageVspApiClient);
+    }
+
+    public NuageVspApiClient getNuageVspApiClient() {
+        return _nuageVspApiClient;
+    }
+
+    public NuageVspElementClient getNuageVspElementClient() {
+        return _nuageVspElementClient;
+    }
+
+    public NuageVspGuruClient getNuageVspGuruClient() {
+        return _nuageVspGuruClient;
+    }
+
+    public NuageVspManagerClient getNuageVspManagerClient() {
+        return _nuageVspManagerClient;
     }
 }

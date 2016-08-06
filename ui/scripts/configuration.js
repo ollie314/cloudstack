@@ -28,7 +28,7 @@
         sectionSelect: {
             preFilter: function(args) {
                if(isAdmin())
-                   return ["serviceOfferings", "systemServiceOfferings", "diskOfferings", "networkOfferings"];
+                   return ["serviceOfferings", "systemServiceOfferings", "diskOfferings", "networkOfferings", "vpcOfferings"];
                else if(isDomainAdmin())
                    return ["serviceOfferings", "diskOfferings"];
                else
@@ -3583,7 +3583,10 @@
                                             });
                                             networkServiceObjs.push({
                                                 name: 'Lb',
-                                                provider: [{name: 'VpcVirtualRouter'}]
+                                                provider: [
+                                                       {name: 'VpcVirtualRouter'},
+                                                       {name: 'InternalLbVm'}
+                                                ]
                                             });
                                             networkServiceObjs.push({
                                                 name: 'Gateway',

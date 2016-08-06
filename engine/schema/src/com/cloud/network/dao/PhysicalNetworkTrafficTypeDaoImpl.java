@@ -18,7 +18,6 @@ package com.cloud.network.dao;
 
 import java.util.List;
 
-import javax.ejb.Local;
 
 import org.springframework.stereotype.Component;
 
@@ -33,7 +32,6 @@ import com.cloud.utils.db.SearchCriteria;
 import com.cloud.utils.db.SearchCriteria.Op;
 
 @Component
-@Local(value = PhysicalNetworkTrafficTypeDao.class)
 @DB()
 public class PhysicalNetworkTrafficTypeDaoImpl extends GenericDaoBase<PhysicalNetworkTrafficTypeVO, Long> implements PhysicalNetworkTrafficTypeDao {
     final SearchBuilder<PhysicalNetworkTrafficTypeVO> physicalNetworkSearch;
@@ -91,7 +89,7 @@ public class PhysicalNetworkTrafficTypeDaoImpl extends GenericDaoBase<PhysicalNe
         ovm3AllFieldsSearch = createSearchBuilder(String.class);
         ovm3AllFieldsSearch.and("physicalNetworkId", ovm3AllFieldsSearch.entity().getPhysicalNetworkId(), Op.EQ);
         ovm3AllFieldsSearch.and("trafficType", ovm3AllFieldsSearch.entity().getTrafficType(), Op.EQ);
-        ovm3AllFieldsSearch.selectFields(ovm3AllFieldsSearch.entity().getSimulatorNetworkLabel());
+        ovm3AllFieldsSearch.selectFields(ovm3AllFieldsSearch.entity().getOvm3NetworkLabel());
         ovm3AllFieldsSearch.done();
     }
 
@@ -132,7 +130,7 @@ public class PhysicalNetworkTrafficTypeDaoImpl extends GenericDaoBase<PhysicalNe
         } else if (hType == HypervisorType.Hyperv) {
             sc = hypervAllFieldsSearch.create();
         } else if (hType == HypervisorType.Ovm3) {
-            sc = hypervAllFieldsSearch.create();
+            sc = ovm3AllFieldsSearch.create();
         } else {
             assert (false) : "We don't handle this hypervisor type";
             return null;

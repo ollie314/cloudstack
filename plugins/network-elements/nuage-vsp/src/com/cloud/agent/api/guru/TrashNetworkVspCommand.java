@@ -20,36 +20,19 @@
 package com.cloud.agent.api.guru;
 
 import com.cloud.agent.api.Command;
+import net.nuage.vsp.acs.client.api.model.VspNetwork;
 
 public class TrashNetworkVspCommand extends Command {
 
-    String _domainUuid;
-    String _networkUuid;
-    boolean _isL3Network;
-    String _vpcUuid;
+    private final VspNetwork _network;
 
-    public TrashNetworkVspCommand(String domainUuid, String networkUuid, boolean isL3Network, String vpcUuid) {
+    public TrashNetworkVspCommand(VspNetwork network) {
         super();
-        this._domainUuid = domainUuid;
-        this._networkUuid = networkUuid;
-        this._isL3Network = isL3Network;
-        this._vpcUuid = vpcUuid;
+        this._network = network;
     }
 
-    public String getDomainUuid() {
-        return _domainUuid;
-    }
-
-    public String getNetworkUuid() {
-        return _networkUuid;
-    }
-
-    public boolean isL3Network() {
-        return _isL3Network;
-    }
-
-    public String getVpcUuid() {
-        return _vpcUuid;
+    public VspNetwork getNetwork() {
+        return _network;
     }
 
     @Override
@@ -57,4 +40,23 @@ public class TrashNetworkVspCommand extends Command {
         return false;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TrashNetworkVspCommand)) return false;
+        if (!super.equals(o)) return false;
+
+        TrashNetworkVspCommand that = (TrashNetworkVspCommand) o;
+
+        if (_network != null ? !_network.equals(that._network) : that._network != null) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + (_network != null ? _network.hashCode() : 0);
+        return result;
+    }
 }

@@ -133,6 +133,15 @@ import org.apache.cloudstack.api.command.admin.offering.DeleteDiskOfferingCmd;
 import org.apache.cloudstack.api.command.admin.offering.DeleteServiceOfferingCmd;
 import org.apache.cloudstack.api.command.admin.offering.UpdateDiskOfferingCmd;
 import org.apache.cloudstack.api.command.admin.offering.UpdateServiceOfferingCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.DisableOutOfBandManagementForClusterCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.DisableOutOfBandManagementForHostCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.DisableOutOfBandManagementForZoneCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.EnableOutOfBandManagementForClusterCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.EnableOutOfBandManagementForHostCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.EnableOutOfBandManagementForZoneCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.ConfigureOutOfBandManagementCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.IssueOutOfBandManagementPowerActionCmd;
+import org.apache.cloudstack.api.command.admin.outofbandmanagement.ChangeOutOfBandManagementPasswordCmd;
 import org.apache.cloudstack.api.command.admin.pod.CreatePodCmd;
 import org.apache.cloudstack.api.command.admin.pod.DeletePodCmd;
 import org.apache.cloudstack.api.command.admin.pod.ListPodsByCmd;
@@ -162,7 +171,7 @@ import org.apache.cloudstack.api.command.admin.router.StopRouterCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterCmd;
 import org.apache.cloudstack.api.command.admin.router.UpgradeRouterTemplateCmd;
 import org.apache.cloudstack.api.command.admin.storage.AddImageStoreCmd;
-import org.apache.cloudstack.api.command.admin.storage.AddS3Cmd;
+import org.apache.cloudstack.api.command.admin.storage.AddImageStoreS3CMD;
 import org.apache.cloudstack.api.command.admin.storage.CancelPrimaryStorageMaintenanceCmd;
 import org.apache.cloudstack.api.command.admin.storage.CreateSecondaryStagingStoreCmd;
 import org.apache.cloudstack.api.command.admin.storage.CreateStoragePoolCmd;
@@ -171,7 +180,6 @@ import org.apache.cloudstack.api.command.admin.storage.DeletePoolCmd;
 import org.apache.cloudstack.api.command.admin.storage.DeleteSecondaryStagingStoreCmd;
 import org.apache.cloudstack.api.command.admin.storage.FindStoragePoolsForMigrationCmd;
 import org.apache.cloudstack.api.command.admin.storage.ListImageStoresCmd;
-import org.apache.cloudstack.api.command.admin.storage.ListS3sCmd;
 import org.apache.cloudstack.api.command.admin.storage.ListSecondaryStagingStoresCmd;
 import org.apache.cloudstack.api.command.admin.storage.ListStoragePoolsCmd;
 import org.apache.cloudstack.api.command.admin.storage.ListStorageProvidersCmd;
@@ -443,6 +451,7 @@ import org.apache.cloudstack.api.command.user.vm.StartVMCmd;
 import org.apache.cloudstack.api.command.user.vm.StopVMCmd;
 import org.apache.cloudstack.api.command.user.vm.UpdateDefaultNicForVMCmd;
 import org.apache.cloudstack.api.command.user.vm.UpdateVMCmd;
+import org.apache.cloudstack.api.command.user.vm.UpdateVmNicIpCmd;
 import org.apache.cloudstack.api.command.user.vm.UpgradeVMCmd;
 import org.apache.cloudstack.api.command.user.vmgroup.CreateVMGroupCmd;
 import org.apache.cloudstack.api.command.user.vmgroup.DeleteVMGroupCmd;
@@ -504,6 +513,7 @@ import org.apache.cloudstack.engine.subsystem.api.storage.DataStoreManager;
 import org.apache.cloudstack.engine.subsystem.api.storage.StoragePoolAllocator;
 import org.apache.cloudstack.framework.config.ConfigDepot;
 import org.apache.cloudstack.framework.config.ConfigKey;
+import org.apache.cloudstack.framework.config.Configurable;
 import org.apache.cloudstack.framework.config.dao.ConfigurationDao;
 import org.apache.cloudstack.framework.config.impl.ConfigurationVO;
 import org.apache.cloudstack.framework.security.keystore.KeystoreManager;
@@ -671,9 +681,11 @@ import com.cloud.vm.dao.SecondaryStorageVmDao;
 import com.cloud.vm.dao.UserVmDao;
 import com.cloud.vm.dao.VMInstanceDao;
 
-public class ManagementServerImpl extends ManagerBase implements ManagementServer {
+public class ManagementServerImpl extends ManagerBase implements ManagementServer, Configurable {
     public static final Logger s_logger = Logger.getLogger(ManagementServerImpl.class.getName());
 
+    static final ConfigKey<Integer> vmPasswordLength = new ConfigKey<Integer>("Advanced", Integer.class, "vm.password.length", "10",
+                                                                                      "Specifies the length of a randomly generated password", false);
     @Inject
     public AccountManager _accountMgr;
     @Inject
@@ -905,7 +917,7 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
 
     @Override
     public String generateRandomPassword() {
-        final Integer passwordLength = Integer.parseInt(_configDao.getValue("vm.password.length"));
+        final Integer passwordLength = vmPasswordLength.value();
         return PasswordGenerator.generateRandomPassword(passwordLength);
     }
 
@@ -1597,9 +1609,9 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         final SearchCriteria<VlanVO> sc = sb.create();
         if (keyword != null) {
             final SearchCriteria<VlanVO> ssc = _vlanDao.createSearchCriteria();
-            ssc.addOr("vlanId", SearchCriteria.Op.LIKE, "%" + keyword + "%");
+            ssc.addOr("vlanTag", SearchCriteria.Op.LIKE, "%" + keyword + "%");
             ssc.addOr("ipRange", SearchCriteria.Op.LIKE, "%" + keyword + "%");
-            sc.addAnd("vlanId", SearchCriteria.Op.SC, ssc);
+            sc.addAnd("vlanTag", SearchCriteria.Op.SC, ssc);
         } else {
             if (id != null) {
                 sc.setParameters("id", id);
@@ -2640,12 +2652,10 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(StartRouterCmd.class);
         cmdList.add(StopRouterCmd.class);
         cmdList.add(UpgradeRouterCmd.class);
-        cmdList.add(AddS3Cmd.class);
         cmdList.add(AddSwiftCmd.class);
         cmdList.add(CancelPrimaryStorageMaintenanceCmd.class);
         cmdList.add(CreateStoragePoolCmd.class);
         cmdList.add(DeletePoolCmd.class);
-        cmdList.add(ListS3sCmd.class);
         cmdList.add(ListSwiftsCmd.class);
         cmdList.add(ListStoragePoolsCmd.class);
         cmdList.add(ListStorageTagsCmd.class);
@@ -2898,6 +2908,7 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(DeleteVMSnapshotCmd.class);
         cmdList.add(AddIpToVmNicCmd.class);
         cmdList.add(RemoveIpFromVmNicCmd.class);
+        cmdList.add(UpdateVmNicIpCmd.class);
         cmdList.add(ListNicsCmd.class);
         cmdList.add(ArchiveAlertsCmd.class);
         cmdList.add(DeleteAlertsCmd.class);
@@ -2911,6 +2922,7 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(RemoveFromGlobalLoadBalancerRuleCmd.class);
         cmdList.add(ListStorageProvidersCmd.class);
         cmdList.add(AddImageStoreCmd.class);
+        cmdList.add(AddImageStoreS3CMD.class);
         cmdList.add(ListImageStoresCmd.class);
         cmdList.add(DeleteImageStoreCmd.class);
         cmdList.add(CreateSecondaryStagingStoreCmd.class);
@@ -3018,7 +3030,28 @@ public class ManagementServerImpl extends ManagerBase implements ManagementServe
         cmdList.add(UpdateLBHealthCheckPolicyCmd.class);
         cmdList.add(GetUploadParamsForTemplateCmd.class);
         cmdList.add(GetUploadParamsForVolumeCmd.class);
+        // Out-of-band management APIs for admins
+        cmdList.add(EnableOutOfBandManagementForHostCmd.class);
+        cmdList.add(DisableOutOfBandManagementForHostCmd.class);
+        cmdList.add(EnableOutOfBandManagementForClusterCmd.class);
+        cmdList.add(DisableOutOfBandManagementForClusterCmd.class);
+        cmdList.add(EnableOutOfBandManagementForZoneCmd.class);
+        cmdList.add(DisableOutOfBandManagementForZoneCmd.class);
+        cmdList.add(ConfigureOutOfBandManagementCmd.class);
+        cmdList.add(IssueOutOfBandManagementPowerActionCmd.class);
+        cmdList.add(ChangeOutOfBandManagementPasswordCmd.class);
+
         return cmdList;
+    }
+
+    @Override
+    public String getConfigComponentName() {
+        return ManagementServer.class.getSimpleName();
+    }
+
+    @Override
+    public ConfigKey<?>[] getConfigKeys() {
+        return new ConfigKey<?>[] {vmPasswordLength};
     }
 
     protected class EventPurgeTask extends ManagedContextRunnable {

@@ -22,7 +22,7 @@
             var sections = [];
 
             if (isAdmin()) {
-                sections = ["dashboard", "instances", "storage", "network", "templates", "accounts", "domains", "events", "system", "global-settings", "configuration", "projects", "regions", "affinityGroups"];
+                sections = ["dashboard", "instances", "storage", "network", "templates", "roles", "accounts", "domains", "events", "system", "global-settings", "configuration", "projects", "regions", "affinityGroups"];
             } else if (isDomainAdmin()) {
                 sections = ["dashboard", "instances", "storage", "network", "templates", "accounts", "domains", "events", "projects", "configuration", "regions", "affinityGroups"];
             } else if (g_userProjectsEnabled) {
@@ -52,6 +52,7 @@
             templates: {},
             events: {},
             projects: {},
+            roles: {},
             accounts: {},
 
             domains: {}, //domain-admin and root-admin only
@@ -165,6 +166,26 @@
                     }
                 });
 
+                // Update global pagesize for list APIs in UI
+                $.ajax({
+                    type: 'GET',
+                    url: createURL('listConfigurations'),
+                    data: {name: 'default.ui.page.size'},
+                    dataType: 'json',
+                    async: false,
+                    success: function(data, textStatus, xhr) {
+                        if (data && data.listconfigurationsresponse && data.listconfigurationsresponse.configuration) {
+                            var config = data.listconfigurationsresponse.configuration[0];
+                            if (config && config.name == 'default.ui.page.size') {
+                                pageSize = parseInt(config.value);
+                            }
+                        }
+                    },
+                    error: function(xhr) { // ignore any errors, fallback to the default
+                    }
+                });
+
+
                 // Populate IDP list
                 $.ajax({
                     type: 'GET',
@@ -180,7 +201,7 @@
                         }
                     },
                     error: function(xhr) {
-                    },
+                    }
                 });
 
                 return userValid ? {
@@ -193,8 +214,6 @@
                         domainid: g_domainid
                     }
                 } : false;
-
-                return testAddUser;
             },
 
             // Actual login process, via form

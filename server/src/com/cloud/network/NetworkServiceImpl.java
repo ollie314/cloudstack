@@ -36,7 +36,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 
-import javax.ejb.Local;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
@@ -197,7 +196,6 @@ import com.cloud.vm.dao.VMInstanceDao;
 /**
  * NetworkServiceImpl implements NetworkService.
  */
-@Local(value = {NetworkService.class})
 public class NetworkServiceImpl extends ManagerBase implements  NetworkService {
     private static final Logger s_logger = Logger.getLogger(NetworkServiceImpl.class);
 
@@ -1199,6 +1197,13 @@ public class NetworkServiceImpl extends ManagerBase implements  NetworkService {
             }
 
             if (gateway != null && netmask != null) {
+                if(NetUtils.isNetworkorBroadcastIP(gateway,netmask)) {
+                    if (s_logger.isDebugEnabled()) {
+                        s_logger.debug("The gateway IP provided is " + gateway + " and netmask is " + netmask + ". The IP is either broadcast or network IP.");
+                    }
+                    throw new InvalidParameterValueException("Invalid gateway IP provided. Either the IP is broadcast or network IP.");
+                }
+
                 if (!NetUtils.isValidIp(gateway)) {
                     throw new InvalidParameterValueException("Invalid gateway");
                 }
@@ -1395,7 +1400,7 @@ public class NetworkServiceImpl extends ManagerBase implements  NetworkService {
                     if (_accountMgr.isRootAdmin(caller.getId()) && createVlan && network != null) {
                         // Create vlan ip range
                         _configMgr.createVlanAndPublicIpRange(pNtwk.getDataCenterId(), network.getId(), physicalNetworkId, false, null, startIP, endIP, gateway, netmask, vlanId,
-                                null, startIPv6, endIPv6, ip6Gateway, ip6Cidr);
+                                null, null, startIPv6, endIPv6, ip6Gateway, ip6Cidr);
                     }
                     return network;
                 }
@@ -2100,6 +2105,9 @@ public class NetworkServiceImpl extends ManagerBase implements  NetworkService {
                 }
                 restartNetwork = true;
                 networkOfferingChanged = true;
+
+                //Setting the new network's isReduntant to the new network offering's RedundantRouter.
+                network.setIsReduntant(_networkOfferingDao.findById(networkOfferingId).getRedundantRouter());
             }
         }
 
@@ -3729,8 +3737,14 @@ public class NetworkServiceImpl extends ManagerBase implements  NetworkService {
             }
             trafficType.setHypervNetworkLabel(hypervLabel);
         }
-        _pNTrafficTypeDao.update(id, trafficType);
 
+        if (ovm3Label != null) {
+            if ("".equals(ovm3Label)) {
+                ovm3Label = null;
+            }
+            trafficType.setOvm3NetworkLabel(ovm3Label);
+        }
+        _pNTrafficTypeDao.update(id, trafficType);
         return trafficType;
     }
 

@@ -31,6 +31,8 @@ import org.apache.cloudstack.storage.command.DeleteCommand;
 import org.apache.cloudstack.storage.command.DettachCommand;
 import org.apache.cloudstack.storage.command.ForgetObjectCmd;
 import org.apache.cloudstack.storage.command.IntroduceObjectCmd;
+import org.apache.cloudstack.storage.command.ResignatureAnswer;
+import org.apache.cloudstack.storage.command.ResignatureCommand;
 import org.apache.cloudstack.storage.command.SnapshotAndCopyAnswer;
 import org.apache.cloudstack.storage.command.SnapshotAndCopyCommand;
 import org.apache.cloudstack.storage.to.SnapshotObjectTO;
@@ -114,6 +116,9 @@ public class Ovm3StorageProcessor implements StorageProcessor {
             } else if ((srcData.getObjectType() == DataObjectType.SNAPSHOT)
                     && (destData.getObjectType() == DataObjectType.TEMPLATE)) {
                 return createTemplateFromSnapshot(cmd);
+            } else if ((srcData.getObjectType() == DataObjectType.SNAPSHOT)
+                    && (destData.getObjectType() == DataObjectType.VOLUME)) {
+                return createVolumeFromSnapshot(cmd);
             } else {
                 msg = "Unable to do stuff for " + srcStore.getClass() + ":"
                         + srcData.getObjectType() + " to "
@@ -802,9 +807,17 @@ public class Ovm3StorageProcessor implements StorageProcessor {
      * iSCSI?
      */
     @Override
-    public Answer snapshotAndCopy(SnapshotAndCopyCommand cmd) {
-        LOGGER.debug("execute snapshotAndCopy: "+ cmd.getClass());
-        return new SnapshotAndCopyAnswer("not implemented yet");
+    public SnapshotAndCopyAnswer snapshotAndCopy(SnapshotAndCopyCommand cmd) {
+        LOGGER.info("'SnapshotAndCopyAnswer snapshotAndCopy(SnapshotAndCopyCommand)' not currently used for Ovm3StorageProcessor");
+
+        return new SnapshotAndCopyAnswer("Not implemented");
+    }
+
+    @Override
+    public ResignatureAnswer resignature(final ResignatureCommand cmd) {
+        LOGGER.info("'ResignatureAnswer resignature(ResignatureCommand)' not currently used for Ovm3StorageProcessor");
+
+        return new ResignatureAnswer("Not implemented");
     }
 
     /**

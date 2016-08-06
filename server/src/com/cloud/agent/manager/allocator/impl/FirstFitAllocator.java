@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import javax.ejb.Local;
 import javax.inject.Inject;
 import javax.naming.ConfigurationException;
 
@@ -67,7 +66,6 @@ import com.cloud.vm.dao.VMInstanceDao;
  * An allocator that tries to find a fit on a computing host.  This allocator does not care whether or not the host supports routing.
  */
 @Component
-@Local(value = {HostAllocator.class})
 public class FirstFitAllocator extends AdapterBase implements HostAllocator {
     private static final Logger s_logger = Logger.getLogger(FirstFitAllocator.class);
     @Inject
@@ -297,6 +295,7 @@ public class FirstFitAllocator extends AdapterBase implements HostAllocator {
                     s_logger.debug("Host name: " + host.getName() + ", hostId: " + host.getId() +
                         " already has max Running VMs(count includes system VMs), skipping this and trying other available hosts");
                 }
+                avoid.addHost(host.getId());
                 continue;
             }
 
@@ -305,6 +304,7 @@ public class FirstFitAllocator extends AdapterBase implements HostAllocator {
                 ServiceOfferingDetailsVO groupName = _serviceOfferingDetailsDao.findDetail(serviceOfferingId, GPU.Keys.pciDevice.toString());
                 if(!_resourceMgr.isGPUDeviceAvailable(host.getId(), groupName.getValue(), offeringDetails.getValue())){
                     s_logger.info("Host name: " + host.getName() + ", hostId: "+ host.getId() +" does not have required GPU devices available");
+                    avoid.addHost(host.getId());
                     continue;
                 }
             }

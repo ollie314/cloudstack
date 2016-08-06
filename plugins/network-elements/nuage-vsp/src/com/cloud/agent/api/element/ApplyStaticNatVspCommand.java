@@ -19,39 +19,28 @@
 
 package com.cloud.agent.api.element;
 
-import java.util.List;
-import java.util.Map;
-
 import com.cloud.agent.api.Command;
+import net.nuage.vsp.acs.client.api.model.VspNetwork;
+import net.nuage.vsp.acs.client.api.model.VspStaticNat;
+
+import java.util.List;
 
 public class ApplyStaticNatVspCommand extends Command {
 
-    String _networkDomainUuid;
-    String _vpcOrSubnetUuid;
-    boolean _isL3Network;
-    List<Map<String, Object>> _staticNatDetails;
+    private final VspNetwork _network;
+    private final List<VspStaticNat> _staticNatDetails;
 
-    public ApplyStaticNatVspCommand(String networkDomainUuid, String vpcOrSubnetUuid, boolean isL3Network, List<Map<String, Object>> staticNatDetails) {
+    public ApplyStaticNatVspCommand(VspNetwork network, List<VspStaticNat> staticNatDetails) {
         super();
-        this._networkDomainUuid = networkDomainUuid;
-        this._vpcOrSubnetUuid = vpcOrSubnetUuid;
-        this._isL3Network = isL3Network;
+        this._network = network;
         this._staticNatDetails = staticNatDetails;
     }
 
-    public String getNetworkDomainUuid() {
-        return _networkDomainUuid;
+    public VspNetwork getNetwork() {
+        return _network;
     }
 
-    public String getVpcOrSubnetUuid() {
-        return _vpcOrSubnetUuid;
-    }
-
-    public boolean isL3Network() {
-        return _isL3Network;
-    }
-
-    public List<Map<String, Object>> getStaticNatDetails() {
+    public List<VspStaticNat> getStaticNatDetails() {
         return _staticNatDetails;
     }
 
@@ -60,4 +49,26 @@ public class ApplyStaticNatVspCommand extends Command {
         return false;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ApplyStaticNatVspCommand)) return false;
+        if (!super.equals(o)) return false;
+
+        ApplyStaticNatVspCommand that = (ApplyStaticNatVspCommand) o;
+
+        if (_network != null ? !_network.equals(that._network) : that._network != null) return false;
+        if (_staticNatDetails != null ? !_staticNatDetails.equals(that._staticNatDetails) : that._staticNatDetails != null)
+            return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = super.hashCode();
+        result = 31 * result + (_network != null ? _network.hashCode() : 0);
+        result = 31 * result + (_staticNatDetails != null ? _staticNatDetails.hashCode() : 0);
+        return result;
+    }
 }
