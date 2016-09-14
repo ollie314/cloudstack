@@ -1946,6 +1946,9 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
             vmConfigSpec.getExtraConfig().addAll(
                     Arrays.asList(configureVnc(extraOptions.toArray(new OptionValue[0]), hyperHost, vmInternalCSName, vmSpec.getVncPassword(), keyboardLayout)));
 
+            // config video card
+            configureVideoCard(vmMo, vmSpec, vmConfigSpec);
+
             //
             // Configure VM
             //
@@ -1963,8 +1966,6 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
             Map<String, String> iqnToPath = new HashMap<String, String>();
 
             postDiskConfigBeforeStart(vmMo, vmSpec, sortedDisks, ideControllerKey, scsiControllerKey, iqnToPath, hyperHost, context);
-
-            postVideoCardMemoryConfigBeforeStart(vmMo, vmSpec);
 
             //
             // Power-on VM
@@ -2015,25 +2016,23 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
     }
 
     /**
-     * Sets video card memory to the one provided in detail svga.vramSize (if provided).
+     * Sets video card memory to the one provided in detail svga.vramSize (if provided) on {@code vmConfigSpec}.
      * 64MB was always set before.
      * Size must be in KB.
      * @param vmMo virtual machine mo
      * @param vmSpec virtual machine specs
+     * @param vmConfigSpec virtual machine config spec
+     * @throws Exception exception
      */
-    protected void postVideoCardMemoryConfigBeforeStart(VirtualMachineMO vmMo, VirtualMachineTO vmSpec) {
-        String paramVRamSize = "svga.vramSize";
-        if (vmSpec.getDetails().containsKey(paramVRamSize)){
-            String value = vmSpec.getDetails().get(paramVRamSize);
+    protected void configureVideoCard(VirtualMachineMO vmMo, VirtualMachineTO vmSpec, VirtualMachineConfigSpec vmConfigSpec) throws Exception {
+        if (vmSpec.getDetails().containsKey(VmDetailConstants.SVGA_VRAM_SIZE)){
+            String value = vmSpec.getDetails().get(VmDetailConstants.SVGA_VRAM_SIZE);
             try {
                 long svgaVmramSize = Long.parseLong(value);
-                setNewVRamSizeVmVideoCard(vmMo, svgaVmramSize);
+                setNewVRamSizeVmVideoCard(vmMo, svgaVmramSize, vmConfigSpec);
             }
             catch (NumberFormatException e){
                 s_logger.error("Unexpected value, cannot parse " + value + " to long due to: " + e.getMessage());
-            }
-            catch (Exception e){
-                s_logger.error("Error while reconfiguring vm due to: " + e.getMessage());
             }
         }
     }
@@ -2042,39 +2041,38 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
      * Search for vm video card iterating through vm device list
      * @param vmMo virtual machine mo
      * @param svgaVmramSize new svga vram size (in KB)
+     * @param vmConfigSpec virtual machine config spec
      */
-    private void setNewVRamSizeVmVideoCard(VirtualMachineMO vmMo, long svgaVmramSize) throws Exception {
+    protected void setNewVRamSizeVmVideoCard(VirtualMachineMO vmMo, long svgaVmramSize, VirtualMachineConfigSpec vmConfigSpec) throws Exception {
         for (VirtualDevice device : vmMo.getAllDeviceList()){
             if (device instanceof VirtualMachineVideoCard){
                 VirtualMachineVideoCard videoCard = (VirtualMachineVideoCard) device;
-                modifyVmVideoCardVRamSize(videoCard, vmMo, svgaVmramSize);
+                modifyVmVideoCardVRamSize(videoCard, vmMo, svgaVmramSize, vmConfigSpec);
             }
         }
     }
 
     /**
-     * Modifies vm vram size if it was set to a different size to the one provided in svga.vramSize (user_vm_details or template_vm_details)
+     * Modifies vm vram size if it was set to a different size to the one provided in svga.vramSize (user_vm_details or template_vm_details) on {@code vmConfigSpec}
      * @param videoCard vm's video card device
      * @param vmMo virtual machine mo
      * @param svgaVmramSize new svga vram size (in KB)
+     * @param vmConfigSpec virtual machine config spec
      */
-    private void modifyVmVideoCardVRamSize(VirtualMachineVideoCard videoCard, VirtualMachineMO vmMo, long svgaVmramSize) throws Exception {
+    protected void modifyVmVideoCardVRamSize(VirtualMachineVideoCard videoCard, VirtualMachineMO vmMo, long svgaVmramSize, VirtualMachineConfigSpec vmConfigSpec) {
         if (videoCard.getVideoRamSizeInKB().longValue() != svgaVmramSize){
             s_logger.info("Video card memory was set " + videoCard.getVideoRamSizeInKB().longValue() + "kb instead of " + svgaVmramSize + "kb");
-            VirtualMachineConfigSpec newSizeSpecs = configSpecVideoCardNewVRamSize(videoCard, svgaVmramSize);
-            boolean res = vmMo.configureVm(newSizeSpecs);
-            if (res) {
-                s_logger.info("Video card memory successfully updated to " + svgaVmramSize + "kb");
-            }
+            configureSpecVideoCardNewVRamSize(videoCard, svgaVmramSize, vmConfigSpec);
         }
     }
 
     /**
-     * Returns a VirtualMachineConfigSpec to edit its svga vram size
+     * Add edit spec on {@code vmConfigSpec} to modify svga vram size
      * @param videoCard video card device to edit providing the svga vram size
      * @param svgaVmramSize new svga vram size (in KB)
+     * @param vmConfigSpec virtual machine spec
      */
-    private VirtualMachineConfigSpec configSpecVideoCardNewVRamSize(VirtualMachineVideoCard videoCard, long svgaVmramSize){
+    protected void configureSpecVideoCardNewVRamSize(VirtualMachineVideoCard videoCard, long svgaVmramSize, VirtualMachineConfigSpec vmConfigSpec){
         videoCard.setVideoRamSizeInKB(svgaVmramSize);
         videoCard.setUseAutoDetect(false);
 
@@ -2082,9 +2080,7 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
         arrayVideoCardConfigSpecs.setDevice(videoCard);
         arrayVideoCardConfigSpecs.setOperation(VirtualDeviceConfigSpecOperation.EDIT);
 
-        VirtualMachineConfigSpec changeVideoCardSpecs = new VirtualMachineConfigSpec();
-        changeVideoCardSpecs.getDeviceChange().add(arrayVideoCardConfigSpecs);
-        return changeVideoCardSpecs;
+        vmConfigSpec.getDeviceChange().add(arrayVideoCardConfigSpecs);
     }
 
     private void tearDownVm(VirtualMachineMO vmMo) throws Exception{
@@ -5539,17 +5535,8 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
             VmwareHypervisorHost hyperHost = getHyperHost(context, null);
             VolumeTO vol = cmd.getVolume();
 
-            ManagedObjectReference morDs = HypervisorHostHelper.findDatastoreWithBackwardsCompatibility(hyperHost, vol.getPoolUuid());
-            if (morDs == null) {
-                String msg = "Unable to find datastore based on volume mount point " + vol.getMountPoint();
-                s_logger.error(msg);
-                throw new Exception(msg);
-            }
+            VirtualMachineMO vmMo = findVmOnDatacenter(context, hyperHost, vol);
 
-            ManagedObjectReference morCluster = hyperHost.getHyperHostCluster();
-            ClusterMO clusterMo = new ClusterMO(context, morCluster);
-
-            VirtualMachineMO vmMo = clusterMo.findVmOnHyperHost(vol.getPath());
             if (vmMo != null && vmMo.isTemplate()) {
                 if (s_logger.isInfoEnabled()) {
                     s_logger.info("Destroy template volume " + vol.getPath());
@@ -5572,6 +5559,26 @@ public class VmwareResource implements StoragePoolResource, ServerResource, Vmwa
             s_logger.error(msg, e);
             return new Answer(cmd, false, msg);
         }
+    }
+
+    /**
+     * Use data center to look for vm, instead of randomly picking up a cluster<br/>
+     * (in multiple cluster environments vm could not be found if wrong cluster was chosen)
+     * @param context vmware context
+     * @param hyperHost vmware hv host
+     * @param vol volume
+     * @return a virtualmachinemo if could be found on datacenter.
+     * @throws Exception if there is an error while finding vm
+     * @throws CloudRuntimeException if datacenter cannot be found
+     */
+    protected VirtualMachineMO findVmOnDatacenter(VmwareContext context, VmwareHypervisorHost hyperHost, VolumeTO vol) throws Exception {
+        DatacenterMO dcMo = new DatacenterMO(context, hyperHost.getHyperHostDatacenter());
+        if (dcMo.getMor() == null) {
+            String msg = "Unable to find VMware DC";
+            s_logger.error(msg);
+            throw new CloudRuntimeException(msg);
+        }
+        return dcMo.findVm(vol.getPath());
     }
 
     private String getAbsoluteVmdkFile(VirtualDisk disk) {
